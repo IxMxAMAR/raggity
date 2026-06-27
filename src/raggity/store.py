@@ -182,3 +182,4 @@ class LanceDBStore(VectorStore):
 
 
 register("store", "lancedb", "raggity.store:LanceDBStore")
+register("store", "qdrant", "raggity.qdrant_store:QdrantStore")
