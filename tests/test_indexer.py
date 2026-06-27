@@ -88,3 +88,12 @@ def test_fingerprint_change_triggers_full_rebuild(tmp_path, emb):
                 fingerprint="fp-v2").ingest([str(notes / "*.md")])
     assert r.added >= 1           # treated as fresh after reset
     assert store.count() == n1    # not doubled
+
+
+def test_indexer_calls_ensure_ann(tmp_path, emb, monkeypatch):
+    notes = tmp_path / "notes"; notes.mkdir(); (notes / "a.md").write_text("# A\n\nx")
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    seen = {}
+    monkeypatch.setattr(store, "ensure_ann_index", lambda t: seen.setdefault("t", t))
+    Indexer(emb, store, manifest_path=str(tmp_path / "m.json"), ann_threshold=42).ingest([str(notes / "*.md")])
+    assert seen["t"] == 42

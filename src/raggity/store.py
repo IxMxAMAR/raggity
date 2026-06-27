@@ -36,6 +36,11 @@ class VectorStore(ABC):
     def optimize(self) -> None: ...
     @abstractmethod
     def reset(self) -> None: ...
+    @abstractmethod
+    def ensure_ann_index(self, threshold: int) -> None: ...
+    @classmethod
+    @abstractmethod
+    def from_config(cls, cfg, dim: int) -> "VectorStore": ...
 
 
 def _row_to_chunk(row: dict, score: float = 0.0) -> Chunk:
@@ -162,6 +167,18 @@ class LanceDBStore(VectorStore):
             self._tbl.optimize()
         except Exception:
             pass
+
+    @classmethod
+    def from_config(cls, cfg, dim: int) -> "LanceDBStore":
+        return cls(path=cfg.index.path, dim=dim)
+
+    def ensure_ann_index(self, threshold: int) -> None:
+        if threshold <= 0 or self.count() < threshold:
+            return
+        try:
+            self._tbl.create_index(metric="cosine", vector_column_name="vector", replace=True)
+        except Exception as exc:
+            log.warning("ANN index build skipped: %s", exc)
 
 
 register("store", "lancedb", "raggity.store:LanceDBStore")
