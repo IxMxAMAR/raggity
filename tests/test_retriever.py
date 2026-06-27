@@ -107,6 +107,18 @@ def test_expand_to_parents_dedups_and_swaps_text():
     assert p1.score == 0.9                      # best child's score kept
 
 
+def test_retrieve_multi_fuses_multiple_queries():
+    from raggity.config import RetrievalConfig
+    from raggity.retriever import Retriever
+    a = _chunk("c1", "relevant alpha"); b = _chunk("c2", "relevant beta")
+    # dedup_cosine > 1.0 disables dedup so both chunks survive independent of embedding similarity
+    cfg = RetrievalConfig(candidates=10, top_k=2, rerank=True, relevance_floor=0.3, dedup_cosine=1.01)
+    r = Retriever(FakeEmbedder(), FakeStore([a, b], [a, b]), FakeReranker(), cfg)
+    out = r.retrieve_multi(["q1", "q2"], rerank_query="find relevant")
+    ids = {c.chunk_id for c in out}
+    assert ids == {"c1", "c2"}
+
+
 def test_retrieve_parent_document_returns_parent_text():
     from raggity.config import RetrievalConfig
     from raggity.retriever import Retriever

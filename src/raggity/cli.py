@@ -27,9 +27,13 @@ def ingest(config: str = typer.Option(None, "--config")):
 
 @app.command()
 def ask(question: str, config: str = typer.Option(None, "--config"),
-        plain: bool = typer.Option(False, "--plain")):
+        plain: bool = typer.Option(False, "--plain"),
+        expand: bool = typer.Option(False, "--expand")):
     """Ask a question against your knowledge base."""
-    answer = _rag(config).ask(question)
+    rag = _rag(config)
+    if expand:
+        typer.echo(f"Expanding query (+{rag.cfg.retrieval.expand_n} model calls)…", err=True)
+    answer = rag.ask(question, expand=True if expand else None)
     if plain:
         typer.echo(answer.text)
     else:

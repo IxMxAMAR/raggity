@@ -79,11 +79,24 @@ class Retriever:
         return [by_id[cid] for cid in ranked_ids if cid in by_id][:n]
 
     def retrieve(self, query: str) -> list[Chunk]:
-        candidates = self._hybrid(query)
-        if not candidates:
+        return self.retrieve_multi([query], query)
+
+    def retrieve_multi(self, queries: list[str], rerank_query: str) -> list[Chunk]:
+        # gather candidates per query, fuse by RRF across all
+        per_query_ids: list[list[str]] = []
+        by_id: dict[str, Chunk] = {}
+        for q in queries:
+            cands = self._hybrid(q)
+            per_query_ids.append([c.chunk_id for c in cands])
+            for c in cands:
+                by_id.setdefault(c.chunk_id, c)
+        if not by_id:
             return []
+        fused = rrf_fuse(per_query_ids, k=self.cfg.rrf_k)
+        ranked = sorted(fused, key=lambda cid: fused[cid], reverse=True)
+        candidates = [by_id[cid] for cid in ranked if cid in by_id][: self.cfg.candidates]
         if self.cfg.rerank:
-            candidates = self.reranker.rerank(query, candidates)
+            candidates = self.reranker.rerank(rerank_query, candidates)
             # Relevance floor is calibrated to reranker (sigmoid 0–1) scores.
             # Only apply it — and the floor-based abstain — when reranking is on.
             survivors = [c for c in candidates if c.score >= self.cfg.relevance_floor]

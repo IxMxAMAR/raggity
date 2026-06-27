@@ -32,6 +32,25 @@ def test_ingest_then_status(tmp_path):
     assert r2.exit_code == 0 and "chunks" in r2.stdout.lower()
 
 
+def test_ask_expand_flag(tmp_path, monkeypatch):
+    import raggity.query_transform as qt
+    cfg = _make_config(tmp_path)
+    runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
+
+    async def _fake_expand(prompt, options):
+        yield _AssistantMessage("backups overview\nNAS schedule")
+    monkeypatch.setattr(qt, "query", _fake_expand)
+    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
+
+    async def _fake_query(prompt, options):
+        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+    monkeypatch.setattr(answerer_mod, "query", _fake_query)
+    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+
+    r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg, "--plain", "--expand"])
+    assert r.exit_code == 0 and "NAS" in r.stdout
+
+
 def test_ask_plain(tmp_path, monkeypatch):
     cfg = _make_config(tmp_path)
     runner.invoke(cli_mod.app, ["ingest", "--config", cfg])

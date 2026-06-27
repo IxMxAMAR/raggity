@@ -18,11 +18,13 @@ class IngestReport:
 
 
 class Indexer:
-    def __init__(self, embedder, store, manifest_path: str, fingerprint: str = "") -> None:
+    def __init__(self, embedder, store, manifest_path: str, fingerprint: str = "",
+                 chunk_kwargs: dict | None = None) -> None:
         self.embedder = embedder
         self.store = store
         self.manifest_path = manifest_path
         self.fingerprint = fingerprint
+        self.chunk_kwargs = chunk_kwargs
 
     def _load_manifest(self) -> dict[str, str]:
         if os.path.isfile(self.manifest_path):
@@ -76,7 +78,7 @@ class Indexer:
                 continue
             # changed or new → replace chunks for this source
             self.store.delete_source(doc.path)
-            self.store.upsert(chunk_document(doc), self.embedder)
+            self.store.upsert(chunk_document(doc, **(self.chunk_kwargs or {})), self.embedder)
             if prev is None:
                 report.added += 1
             else:
