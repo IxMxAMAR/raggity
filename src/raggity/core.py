@@ -15,10 +15,17 @@ from .store import LanceDBStore
 class Raggity:
     def __init__(self, cfg: RaggityConfig | None = None) -> None:
         self.cfg = cfg or RaggityConfig()
-        self.embedder = FastEmbedEmbedder(
+        base = FastEmbedEmbedder(
             model_name=self.cfg.embedding.model,
             provider=self.cfg.embedding.provider,
+            batch_size=self.cfg.embedding.batch_size,
+            parallel=self.cfg.embedding.parallel,
         )
+        if self.cfg.embedding.cache:
+            from .cached_embedder import CachedEmbedder
+            self.embedder = CachedEmbedder(base, os.path.join(self.cfg.index.path, "embed_cache.json"))
+        else:
+            self.embedder = base
         self.store = LanceDBStore(path=self.cfg.index.path, dim=self.embedder.dim)
         self.reranker = None
         if self.cfg.retrieval.rerank:

@@ -70,15 +70,16 @@ class Indexer:
         docs = load_documents(globs)
         seen: dict[str, str] = {}
 
+        all_chunks: list = []
         for doc in docs:
             seen[doc.path] = doc.file_hash
             prev = manifest.get(doc.path)
             if prev == doc.file_hash:
                 report.unchanged += 1
                 continue
-            # changed or new → replace chunks for this source
+            # changed or new → delete existing chunks for this source
             self.store.delete_source(doc.path)
-            self.store.upsert(chunk_document(doc, **(self.chunk_kwargs or {})), self.embedder)
+            all_chunks.extend(chunk_document(doc, **(self.chunk_kwargs or {})))
             if prev is None:
                 report.added += 1
             else:
@@ -89,6 +90,10 @@ class Indexer:
             if old_path not in seen:
                 self.store.delete_source(old_path)
                 report.deleted += 1
+
+        # single batched upsert across all changed files
+        if all_chunks:
+            self.store.upsert(all_chunks, self.embedder)
 
         self._save_manifest(seen)
         self._write_fingerprint()

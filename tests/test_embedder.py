@@ -21,6 +21,13 @@ def test_embed_query_shape(emb):
     assert len(v) == 384
 
 
+def test_embed_documents_accepts_batch_params(emb):
+    import inspect
+    p = inspect.signature(type(emb).__init__).parameters
+    assert "batch_size" in p and "parallel" in p
+    assert len(emb.embed_documents(["a", "b", "c"])[0]) == 384
+
+
 def test_similar_texts_closer_than_dissimilar(emb):
     import numpy as np
     a = np.array(emb.embed_query("how do I back up my files"))
