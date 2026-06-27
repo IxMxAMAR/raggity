@@ -85,3 +85,24 @@ def test_core_ask_hyde_routes_retrieve_multi(tmp_path, monkeypatch):
     assert "NAS" in ans.text
     assert len(retrieve_multi_calls) == 1, "retrieve_multi must be called when hyde=True"
     assert len(retrieve_multi_calls[0]) >= 2, "queries list must include original + hyde passage"
+
+
+def test_aask_decompose_merges_and_answers(tmp_path, monkeypatch):
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(sources=SourcesConfig(include=[str(notes / "*.md")]),
+                        index=IndexConfig(path=str(tmp_path / "idx")))
+    import raggity.query_transform as qt
+    async def _decomp(prompt, options):
+        yield _AssistantMessage("how often?\nwhere stored?")
+    monkeypatch.setattr(qt, "query", _decomp)
+    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
+    async def _ans(prompt, options):
+        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+    monkeypatch.setattr(answerer_mod, "query", _ans)
+    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    from raggity.core import Raggity
+    rag = Raggity(cfg); rag.ingest()
+    import asyncio
+    ans = asyncio.run(rag.aask_decompose("how are backups done?"))
+    assert "NAS" in ans.text

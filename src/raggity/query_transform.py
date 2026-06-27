@@ -50,3 +50,15 @@ async def generate_hyde_document(question: str, model: str = "claude-opus-4-8",
 async def generate_step_back_question(question: str, model: str = "claude-opus-4-8",
                                       auth: str = "auto") -> str:
     return await _one_shot(f"Question: {question}", _STEPBACK_SYS, model, auth)
+
+
+_DECOMPOSE_SYS = ("Break the user's question into a few focused sub-questions whose answers "
+                  "together answer the original. Output ONLY the sub-questions, one per line.")
+
+
+async def decompose_question(question: str, n: int, model: str = "claude-opus-4-8",
+                             auth: str = "auto") -> list[str]:
+    text = await _one_shot(f"Question: {question}\nGive at most {n} sub-questions.",
+                           _DECOMPOSE_SYS, model, auth)
+    lines = [ln.strip(" -*\t") for ln in text.splitlines() if ln.strip()]
+    return lines[:n]

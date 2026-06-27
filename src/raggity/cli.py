@@ -32,35 +32,46 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
         expand: bool = typer.Option(False, "--expand"),
         hyde: bool = typer.Option(False, "--hyde"),
         step_back: bool = typer.Option(False, "--step-back"),
-        no_stream: bool = typer.Option(False, "--no-stream")):
+        no_stream: bool = typer.Option(False, "--no-stream"),
+        decompose: bool = typer.Option(False, "--decompose")):
     """Ask a question against your knowledge base."""
     import asyncio
     rag = _rag(config)
-    if expand or hyde or step_back:
-        typer.echo("Query transforms enabled (+model calls)…", err=True)
-    expand_arg = True if expand else None
-    hyde_arg = True if hyde else None
-    step_back_arg = True if step_back else None
-    if plain or no_stream:
-        # Buffered path — unchanged behaviour
-        answer = rag.ask(question, expand=expand_arg, hyde=hyde_arg, step_back=step_back_arg)
+    if decompose:
+        if expand or hyde or step_back:
+            typer.echo("note: --decompose overrides other query transforms", err=True)
+        typer.echo("Decomposing query (+model calls)…", err=True)
+        answer = rag.ask_decompose(question)
         if plain:
             typer.echo(answer.text)
         else:
             console.print(answer.text)
     else:
-        # Streaming path — default
-        async def _stream():
-            final = None
-            async for piece in rag.aask_stream(question, expand=expand_arg,
-                                               hyde=hyde_arg, step_back=step_back_arg):
-                if isinstance(piece, str):
-                    print(piece, end="", flush=True)
-                else:
-                    final = piece
-            print()
-            return final
-        answer = asyncio.run(_stream())
+        if expand or hyde or step_back:
+            typer.echo("Query transforms enabled (+model calls)…", err=True)
+        expand_arg = True if expand else None
+        hyde_arg = True if hyde else None
+        step_back_arg = True if step_back else None
+        if plain or no_stream:
+            # Buffered path — unchanged behaviour
+            answer = rag.ask(question, expand=expand_arg, hyde=hyde_arg, step_back=step_back_arg)
+            if plain:
+                typer.echo(answer.text)
+            else:
+                console.print(answer.text)
+        else:
+            # Streaming path — default
+            async def _stream():
+                final = None
+                async for piece in rag.aask_stream(question, expand=expand_arg,
+                                                   hyde=hyde_arg, step_back=step_back_arg):
+                    if isinstance(piece, str):
+                        print(piece, end="", flush=True)
+                    else:
+                        final = piece
+                print()
+                return final
+            answer = asyncio.run(_stream())
     if answer is not None and answer.citations and not plain:
         console.print("\n[dim]Sources:[/dim]")
         seen = set()
