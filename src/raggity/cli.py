@@ -127,6 +127,31 @@ def eval_cmd(golden: str = typer.Argument(...),
 
 
 @app.command()
+def watch(config: str = typer.Option(None, "--config"),
+          debounce: float = typer.Option(2.0, "--debounce")):
+    """Watch source folders and re-index on change (Ctrl-C to stop)."""
+    rag = _rag(config)
+    try:
+        from .watch import run_watch
+    except ImportError:
+        console.print("[red]watch needs extra deps:[/red] pip install raggity[watch]")
+        raise typer.Exit(1)
+    try:
+        observer = run_watch(rag, rag.cfg.sources.include, debounce)
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]Watching[/green] {len(rag.cfg.sources.include)} source pattern(s). Ctrl-C to stop.")
+    import time
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        observer.stop()
+    observer.join()
+
+
+@app.command()
 def serve(config: str = typer.Option(None, "--config"),
           host: str = typer.Option("127.0.0.1", "--host"),
           port: int = typer.Option(8000, "--port")):

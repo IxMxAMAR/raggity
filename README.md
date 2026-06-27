@@ -89,6 +89,7 @@ Both `rag` and `raggity` are registered as console scripts — they are identica
 | `rag reindex --force` | Wipe and rebuild the index from scratch |
 | `rag eval golden.jsonl` | Run retrieval quality metrics (Hit@k, MRR, Recall@k) against a golden set |
 | `rag eval golden.jsonl --llm-judge` | LLM-judge eval: faithfulness + answer relevance (2 model calls per question; self-assessed) |
+| `rag watch` | Watch source folders and re-index automatically on file changes (Ctrl-C to stop) |
 
 All commands accept `--config PATH` to point at a non-default config file.
 
@@ -228,6 +229,84 @@ rag eval golden.jsonl --llm-judge
 Reports `Faithfulness` (does the answer stay grounded in the retrieved chunks?) and `AnswerRelevance` (does the answer address the question?), each in [0, 1]. Each question costs two model calls.
 
 **Caveat:** self-assessed — the same model family that generates answers also grades them. Treat these scores as a sanity check, not ground truth.
+
+---
+
+## Scalability
+
+### Watch daemon
+
+Install the watch extra:
+
+```bash
+pip install raggity[watch]
+```
+
+Start the watch daemon:
+
+```bash
+rag watch
+```
+
+raggity monitors all paths in `sources.include` recursively. When files change, it triggers a debounced re-index (default 2 s of quiet before the ingest runs, coalescing rapid filesystem events into a single call).
+
+```bash
+rag watch --debounce 5.0   # wait 5 s of quiet before re-indexing
+```
+
+The daemon runs until you press Ctrl-C.
+
+### Qdrant backend
+
+For large-scale or multi-user deployments, raggity supports Qdrant as an alternative vector store:
+
+```bash
+pip install raggity[qdrant]
+```
+
+Configure in `raggity.toml`:
+
+```toml
+[index]
+backend = "qdrant"
+qdrant_location = "http://localhost:6333"   # remote Qdrant server
+# qdrant_location = ":memory:"             # ephemeral in-process (testing)
+# qdrant_location = "/path/to/local"       # persistent local storage
+qdrant_collection = "raggity"
+# qdrant_api_key = "..."                   # or set QDRANT_API_KEY env var
+```
+
+LanceDB (the default) requires no extra install and is the recommended choice for single-user local deployments.
+
+### Batch and parallel embedding
+
+raggity automatically batches embedding calls (default `batch_size = 32`). Parallel workers (`parallel = 0` = auto) are used when supported by the model. Configure in `raggity.toml`:
+
+```toml
+[embedding]
+batch_size = 64    # increase for faster ingest on large corpora
+parallel = 4       # number of parallel embedding workers (0 = auto)
+```
+
+### Embedding cache
+
+To avoid re-embedding unchanged chunks across ingest runs, enable the embedding cache:
+
+```toml
+[embedding]
+cache = ".raggity/embed_cache.db"   # SQLite path; omit to disable
+```
+
+Cached embeddings are looked up by content hash before calling the embedding model — useful when you frequently run `rag ingest` on large corpora with small diffs.
+
+### ANN auto-index
+
+raggity automatically builds an Approximate Nearest Neighbor (ANN) index on the vector store once the collection grows past a threshold (default 10 000 chunks). This keeps search latency flat as your knowledge base scales. Configure the threshold:
+
+```toml
+[index]
+ann_threshold = 50000   # build ANN index once chunk count exceeds this
+```
 
 ---
 
