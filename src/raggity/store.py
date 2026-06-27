@@ -61,7 +61,7 @@ class LanceDBStore(VectorStore):
             pa.field("text", pa.string()),
             pa.field("vector", pa.list_(pa.float32(), dim)),
         ])
-        if TABLE in self._db.list_tables():
+        if TABLE in self._db.list_tables().tables:
             self._tbl = self._db.open_table(TABLE)
         else:
             self._tbl = self._db.create_table(TABLE, schema=self._schema)
