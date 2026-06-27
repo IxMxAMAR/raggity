@@ -19,5 +19,6 @@ def test_answer_roundtrip():
 def test_load_tolerates_missing_and_corrupt(tmp_path):
     p = str(tmp_path / "answer_cache.json")
     assert cache.load(p) == {}
-    open(p, "w").write("{ not json")
+    with open(p, "w") as fh:
+        fh.write("{ not json")
     assert cache.load(p) == {}

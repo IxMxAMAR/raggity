@@ -95,8 +95,6 @@ class Raggity:
                 return _cache.answer_from_dict(data[key])
         answer = await self.answerer.answer(question, chunks)
         if use_cache and key is not None:
-            from . import cache as _cache
-            data = _cache.load(self._cache_path())
             data[key] = _cache.answer_to_dict(answer)
             _cache.save(self._cache_path(), data)
         return answer
@@ -113,7 +111,7 @@ class Raggity:
         for q in [question] + subs:
             for c in self.retriever.retrieve(q):
                 merged.setdefault(c.chunk_id, c)
-        chunks = list(merged.values())[: max(self.cfg.retrieval.top_k * 2, self.cfg.retrieval.top_k)]
+        chunks = list(merged.values())[: self.cfg.retrieval.top_k * 2]
         return await self.answerer.answer(question, chunks)
 
     async def aask_stream(self, question: str, expand: bool | None = None,
