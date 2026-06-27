@@ -52,3 +52,25 @@ def test_delete_source_and_paths(tmp_path, emb):
     store.delete_source("a.md")
     assert store.all_source_paths() == {"b.md"}
     assert store.count() == 1
+
+
+def test_upsert_roundtrips_parent_fields(tmp_path, emb):
+    from raggity.models import Chunk
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    c = Chunk(text="child text about backups", source_path="a.md", title="A",
+              heading_path="A", ordinal=0, chunk_id="c1",
+              parent_id="p1", parent_text="the full parent block about backups")
+    store.upsert([c], emb)
+    res = store.vector_search(emb.embed_query("backups"), limit=1)
+    assert res[0].parent_id == "p1"
+    assert res[0].parent_text == "the full parent block about backups"
+
+
+def test_reset_empties_table(tmp_path, emb):
+    from raggity.models import Chunk
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    store.upsert([Chunk(text="x", source_path="a.md", title="A", heading_path="A",
+                        ordinal=0, chunk_id="c1")], emb)
+    assert store.count() == 1
+    store.reset()
+    assert store.count() == 0

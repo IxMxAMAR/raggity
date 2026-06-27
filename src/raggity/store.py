@@ -34,6 +34,8 @@ class VectorStore(ABC):
     def count(self) -> int: ...
     @abstractmethod
     def optimize(self) -> None: ...
+    @abstractmethod
+    def reset(self) -> None: ...
 
 
 def _row_to_chunk(row: dict, score: float = 0.0) -> Chunk:
@@ -45,6 +47,8 @@ def _row_to_chunk(row: dict, score: float = 0.0) -> Chunk:
         ordinal=int(row["ordinal"]),
         chunk_id=row["chunk_id"],
         score=score,
+        parent_id=row.get("parent_id", "") or "",
+        parent_text=row.get("parent_text", "") or "",
     )
 
 
@@ -62,6 +66,8 @@ class LanceDBStore(VectorStore):
             pa.field("heading_path", pa.string()),
             pa.field("ordinal", pa.int64()),
             pa.field("text", pa.string()),
+            pa.field("parent_id", pa.string()),
+            pa.field("parent_text", pa.string()),
             pa.field("vector", pa.list_(pa.float32(), dim)),
         ])
         if TABLE in self._db.list_tables().tables:
@@ -92,6 +98,8 @@ class LanceDBStore(VectorStore):
             "heading_path": c.heading_path,
             "ordinal": c.ordinal,
             "text": c.text,
+            "parent_id": c.parent_id,
+            "parent_text": c.parent_text,
             "vector": vec,
         } for c, vec in zip(chunks, vectors)]
         (self._tbl.merge_insert("chunk_id")
@@ -142,6 +150,12 @@ class LanceDBStore(VectorStore):
 
     def count(self) -> int:
         return self._tbl.count_rows()
+
+    def reset(self) -> None:
+        if TABLE in self._db.list_tables().tables:
+            self._db.drop_table(TABLE)
+        self._tbl = self._db.create_table(TABLE, schema=self._schema)
+        self._fts_ready = False
 
     def optimize(self) -> None:
         try:

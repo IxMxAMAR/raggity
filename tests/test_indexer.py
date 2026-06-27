@@ -56,3 +56,18 @@ def test_ingest_deletes_removed_source(tmp_path, emb):
     r = indexer.ingest([str(notes / "*.md")])
     assert r.deleted >= 1
     assert all("b.md" not in sp for sp in store.all_source_paths())
+
+
+def test_fingerprint_change_triggers_full_rebuild(tmp_path, emb):
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nalpha content")
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    Indexer(emb, store, manifest_path=str(tmp_path / "m.json"),
+            fingerprint="fp-v1").ingest([str(notes / "*.md")])
+    n1 = store.count()
+    assert n1 >= 1
+    # same files, new fingerprint -> should reset + re-ingest (no duplicate growth)
+    r = Indexer(emb, store, manifest_path=str(tmp_path / "m.json"),
+                fingerprint="fp-v2").ingest([str(notes / "*.md")])
+    assert r.added >= 1           # treated as fresh after reset
+    assert store.count() == n1    # not doubled

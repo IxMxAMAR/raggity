@@ -18,10 +18,11 @@ class IngestReport:
 
 
 class Indexer:
-    def __init__(self, embedder, store, manifest_path: str) -> None:
+    def __init__(self, embedder, store, manifest_path: str, fingerprint: str = "") -> None:
         self.embedder = embedder
         self.store = store
         self.manifest_path = manifest_path
+        self.fingerprint = fingerprint
 
     def _load_manifest(self) -> dict[str, str]:
         if os.path.isfile(self.manifest_path):
@@ -34,8 +35,35 @@ class Indexer:
         with open(self.manifest_path, "w", encoding="utf-8") as fh:
             json.dump(manifest, fh)
 
+    def _fp_path(self) -> str:
+        return self.manifest_path + ".fingerprint"
+
+    def _fingerprint_changed(self) -> bool:
+        if not self.fingerprint:
+            return False
+        prev = None
+        if os.path.isfile(self._fp_path()):
+            with open(self._fp_path(), encoding="utf-8") as fh:
+                prev = fh.read().strip()
+        if prev != self.fingerprint:
+            return True
+        return False
+
+    def _write_fingerprint(self) -> None:
+        if self.fingerprint:
+            Path(self._fp_path()).parent.mkdir(parents=True, exist_ok=True)
+            with open(self._fp_path(), "w", encoding="utf-8") as fh:
+                fh.write(self.fingerprint)
+
+    def _clear_manifest(self) -> None:
+        if os.path.isfile(self.manifest_path):
+            os.remove(self.manifest_path)
+
     def ingest(self, globs: list[str]) -> IngestReport:
         report = IngestReport()
+        if self._fingerprint_changed():
+            self.store.reset()
+            self._clear_manifest()
         manifest = self._load_manifest()
         docs = load_documents(globs)
         seen: dict[str, str] = {}
@@ -61,5 +89,6 @@ class Indexer:
                 report.deleted += 1
 
         self._save_manifest(seen)
+        self._write_fingerprint()
         self.store.optimize()
         return report
