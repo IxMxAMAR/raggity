@@ -1,0 +1,23 @@
+[sources]
+include = ["~/notes/**/*.md", "~/docs/**/*.pdf"]
+
+[embedding]
+model = "BAAI/bge-small-en-v1.5"
+provider = "cpu"          # cpu | cuda | directml | rocm
+
+[retrieval]
+hybrid = true
+rrf_k = 60
+candidates = 30
+rerank = true
+rerank_model = "Xenova/ms-marco-MiniLM-L-6-v2"
+top_k = 5
+dedup_cosine = 0.92
+relevance_floor = 0.3
+
+[generation]
+auth = "auto"             # auto (subscription→key) | subscription | api_key
+model = "claude-opus-4-8"
+
+[index]
+path = ".raggity/index"
