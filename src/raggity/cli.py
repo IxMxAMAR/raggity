@@ -103,12 +103,24 @@ def reindex(config: str = typer.Option(None, "--config"),
 @app.command(name="eval")
 def eval_cmd(golden: str = typer.Argument(...),
              config: str = typer.Option(None, "--config"),
-             k: int = typer.Option(5, "--k")):
+             k: int = typer.Option(5, "--k"),
+             llm_judge: bool = typer.Option(False, "--llm-judge")):
     """Run free CPU retrieval metrics against a golden.jsonl set."""
     rag = _rag(config)
-    res = evaluate(rag.retriever, load_golden(golden), k=k)
-    console.print(f"Hit@{k}={res.hit_rate:.3f}  MRR={res.mrr:.3f}  "
-                  f"Recall@{k}={res.recall:.3f}  (n={res.n})")
+    if llm_judge:
+        typer.echo("Running LLM-judge eval (+2 model calls per question)…", err=True)
+        import asyncio
+        from .evaluate import llm_judge as run_judge
+        res = asyncio.run(run_judge(rag, load_golden(golden),
+                                    model=rag.cfg.generation.model,
+                                    auth=rag.cfg.generation.auth))
+        console.print(f"Faithfulness={res.faithfulness:.3f}  "
+                      f"AnswerRelevance={res.answer_relevance:.3f}  (n={res.n})")
+        console.print("(note: self-assessed — same model family generates and grades)")
+    else:
+        res = evaluate(rag.retriever, load_golden(golden), k=k)
+        console.print(f"Hit@{k}={res.hit_rate:.3f}  MRR={res.mrr:.3f}  "
+                      f"Recall@{k}={res.recall:.3f}  (n={res.n})")
 
 
 @app.command()
