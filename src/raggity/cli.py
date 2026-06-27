@@ -33,7 +33,8 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
         hyde: bool = typer.Option(False, "--hyde"),
         step_back: bool = typer.Option(False, "--step-back"),
         no_stream: bool = typer.Option(False, "--no-stream"),
-        decompose: bool = typer.Option(False, "--decompose")):
+        decompose: bool = typer.Option(False, "--decompose"),
+        no_cache: bool = typer.Option(False, "--no-cache")):
     """Ask a question against your knowledge base."""
     import asyncio
     rag = _rag(config)
@@ -52,15 +53,17 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
         expand_arg = True if expand else None
         hyde_arg = True if hyde else None
         step_back_arg = True if step_back else None
+        use_cache_arg = False if no_cache else None
         if plain or no_stream:
-            # Buffered path — unchanged behaviour
-            answer = rag.ask(question, expand=expand_arg, hyde=hyde_arg, step_back=step_back_arg)
+            # Buffered path — honors cache (unless --no-cache)
+            answer = rag.ask(question, expand=expand_arg, hyde=hyde_arg, step_back=step_back_arg,
+                             use_cache=use_cache_arg)
             if plain:
                 typer.echo(answer.text)
             else:
                 console.print(answer.text)
         else:
-            # Streaming path — default
+            # Streaming path — default; always calls the model (cache is buffered-only)
             async def _stream():
                 final = None
                 async for piece in rag.aask_stream(question, expand=expand_arg,

@@ -87,6 +87,26 @@ def test_core_ask_hyde_routes_retrieve_multi(tmp_path, monkeypatch):
     assert len(retrieve_multi_calls[0]) >= 2, "queries list must include original + hyde passage"
 
 
+def test_aask_cache_hit_skips_model(tmp_path, monkeypatch):
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(sources=SourcesConfig(include=[str(notes / "*.md")]),
+                        index=IndexConfig(path=str(tmp_path / "idx")))
+    cfg.generation.cache = True
+    calls = {"n": 0}
+    async def _ans(prompt, options):
+        calls["n"] += 1
+        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+    monkeypatch.setattr(answerer_mod, "query", _ans)
+    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    from raggity.core import Raggity
+    rag = Raggity(cfg); rag.ingest()
+    a1 = rag.ask("how are backups done?")
+    a2 = rag.ask("how are backups done?")   # identical → cache hit, no 2nd model call
+    assert a1.text == a2.text
+    assert calls["n"] == 1
+
+
 def test_aask_decompose_merges_and_answers(tmp_path, monkeypatch):
     notes = tmp_path / "notes"; notes.mkdir()
     (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
