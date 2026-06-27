@@ -6,6 +6,9 @@ model = "BAAI/bge-small-en-v1.5"
 provider = "cpu"          # cpu | cuda | directml | rocm
 # Larger embedding model (768-dim, MRL, 8k context) — requires `rag reindex --force`:
 # model = "nomic-embed-text-v1.5-Q"
+# batch_size = 32         # chunks per embedding call (increase for large corpora)
+# parallel = 0            # embedding workers (0 = auto)
+# cache = ".raggity/embed_cache.db"  # SQLite embedding cache; omit to disable
 
 [retrieval]
 hybrid = true
@@ -33,3 +36,8 @@ path = ".raggity/index"
 # qdrant_location = "http://localhost:6333"  # or ":memory:" (non-persistent) or a local path
 # qdrant_collection = "raggity"
 # qdrant_api_key = "..."       # or set QDRANT_API_KEY env var (takes precedence)
+# ann_threshold = 10000        # build ANN index once chunk count exceeds this
+
+# [watch]
+# debounce = 2.0              # seconds of quiet before re-indexing after file changes
+#                             # (use `rag watch` command; requires pip install raggity[watch])

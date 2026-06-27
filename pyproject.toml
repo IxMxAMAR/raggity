@@ -25,6 +25,7 @@ dependencies = [
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 server = ["fastapi>=0.110", "uvicorn>=0.29"]
 qdrant = ["qdrant-client>=1.9"]
+watch = ["watchdog>=4"]
 
 [project.scripts]
 raggity = "raggity.cli:app"
