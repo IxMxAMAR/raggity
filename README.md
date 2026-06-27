@@ -152,6 +152,80 @@ Other useful knobs in `[retrieval]`:
 
 ---
 
+## Phase 2 features
+
+### Parent-document retrieval
+
+By default, raggity chunks documents into fixed-size pieces (256 tokens) for indexing. When `parent_document = true`, each chunk retains a reference to its parent document (up to 1024 tokens), and retrieval expands matched chunks to include their parents when passing context to Claude.
+
+```toml
+[retrieval]
+parent_document = true
+```
+
+Parent-document mode automatically rebuilds the index via the index fingerprint when enabled or disabled — no manual steps needed.
+
+### Query expansion
+
+The `--expand` flag generates multiple query variations using Claude, then retrieves for each and reranks the combined results using Reciprocal Rank Fusion. This improves coverage for complex questions but increases API calls.
+
+```bash
+rag ask "How do I set up a new dev environment?" --expand
+```
+
+Expansion uses the `generation.model` to generate variations; the number of variations is configurable via `retrieval.expand_n` (default 3).
+
+### FastAPI server
+
+Install the server extras:
+
+```bash
+pip install raggity[server]
+```
+
+Start the server:
+
+```bash
+rag serve
+```
+
+Endpoints:
+- `POST /ingest` — trigger incremental indexing
+- `GET /ask?q=...` — ask a question (returns JSON with answer, sources, citations)
+- `GET /status` — index statistics
+
+The server respects your `raggity.toml` config, using the same auth, embedding, and retrieval settings as the CLI.
+
+### Streaming
+
+By default, the answer is streamed token-by-token as it is generated — no waiting for the full response. Use `--no-stream` to disable:
+
+```bash
+rag ask "..." --no-stream
+```
+
+Streaming is supported on both the CLI and the FastAPI server (`/ask` endpoint returns chunked transfer encoding).
+
+### Heavy reranker and nomic embed options
+
+The default models (`Xenova/ms-marco-MiniLM-L-6-v2` for reranking, `BAAI/bge-small-en-v1.5` for embedding) are lightweight and portable. For higher quality, you can switch to heavier alternatives:
+
+**Heavy reranker** (BAAI/bge-reranker-v2-m3, ~1GB):
+```toml
+[retrieval]
+rerank_model = "BAAI/bge-reranker-v2-m3"
+```
+
+**Larger embedding model** (nomic-embed-text-v1.5-Q, 768-dim with Matryoshka scaling and 8k context):
+```toml
+[embedding]
+model = "nomic-embed-text-v1.5-Q"
+```
+
+Changing `embedding.model` or `parent_document` triggers an automatic full rebuild via the index fingerprint. Heavy models download a large file on first use; this happens transparently during the first `rag ingest` or `rag ask` command after the config change.
+
+---
+
 ## Platform support
 
 | Platform | Status |

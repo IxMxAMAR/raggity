@@ -4,6 +4,8 @@ include = ["~/notes/**/*.md", "~/docs/**/*.pdf"]
 [embedding]
 model = "BAAI/bge-small-en-v1.5"
 provider = "cpu"          # cpu | cuda | directml | rocm
+# Larger embedding model (768-dim, MRL, 8k context) — requires `rag reindex --force`:
+# model = "nomic-embed-text-v1.5-Q"
 
 [retrieval]
 hybrid = true
@@ -11,6 +13,8 @@ rrf_k = 60
 candidates = 30
 rerank = true
 rerank_model = "Xenova/ms-marco-MiniLM-L-6-v2"
+# Higher-quality (heavier ~1GB) reranker:
+# rerank_model = "BAAI/bge-reranker-v2-m3"
 top_k = 5
 dedup_cosine = 0.92
 relevance_floor = 0.3
