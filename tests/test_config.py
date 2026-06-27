@@ -33,3 +33,13 @@ def test_local_toml_autodiscovered(tmp_path, monkeypatch):
     (tmp_path / "raggity.toml").write_text('[retrieval]\ntop_k = 3\n')
     cfg = load_config()
     assert cfg.retrieval.top_k == 3
+
+
+def test_phase2_retrieval_defaults():
+    from raggity.config import RaggityConfig
+    r = RaggityConfig().retrieval
+    assert r.parent_document is False
+    assert r.parent_target_tokens == 1024
+    assert r.child_target_tokens == 256
+    assert r.expand is False
+    assert r.expand_n == 3

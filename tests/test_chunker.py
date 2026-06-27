@@ -34,3 +34,33 @@ def test_long_doc_splits_with_unique_ids():
 
 def test_estimate_tokens_monotonic():
     assert estimate_tokens("a" * 400) > estimate_tokens("a" * 40)
+
+
+def test_parent_mode_children_share_parent_id_and_text():
+    from raggity.chunker import chunk_document
+    body = "\n\n".join(f"paragraph {i} " * 30 for i in range(12))
+    doc = _doc(f"# A\n\n{body}")
+    chunks = chunk_document(doc, parent_document=True,
+                            parent_target_tokens=200, child_target_tokens=60)
+    assert len(chunks) > 1
+    # children of the same parent share parent_id and parent_text
+    by_parent = {}
+    for c in chunks:
+        assert c.parent_id != ""
+        assert c.parent_text != ""
+        by_parent.setdefault(c.parent_id, set()).add(c.parent_text)
+    # each parent_id maps to exactly one parent_text
+    assert all(len(texts) == 1 for texts in by_parent.values())
+    # at least one parent has multiple children (small-to-big)
+    counts = {}
+    for c in chunks:
+        counts[c.parent_id] = counts.get(c.parent_id, 0) + 1
+    assert max(counts.values()) >= 2
+    # child text differs from (is shorter than) its parent text
+    assert any(len(c.text) < len(c.parent_text) for c in chunks)
+
+
+def test_default_mode_has_empty_parent_fields():
+    from raggity.chunker import chunk_document
+    chunks = chunk_document(_doc("# A\n\nshort body"))
+    assert chunks[0].parent_id == "" and chunks[0].parent_text == ""

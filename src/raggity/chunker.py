@@ -69,8 +69,7 @@ def _split_body(body: str, target_tokens: int, overlap_tokens: int) -> list[str]
     return pieces or [body]
 
 
-def chunk_document(doc: Document, target_tokens: int = 512,
-                   overlap_tokens: int = 64) -> list[Chunk]:
+def _chunk_flat(doc: Document, target_tokens: int, overlap_tokens: int) -> list[Chunk]:
     chunks: list[Chunk] = []
     ordinal = 0
     for heading_path, body in _split_into_sections(doc.text):
@@ -93,3 +92,39 @@ def chunk_document(doc: Document, target_tokens: int = 512,
             )
             ordinal += 1
     return chunks
+
+
+def _chunk_parent(doc: Document, parent_tokens: int, child_tokens: int,
+                  overlap_tokens: int) -> list[Chunk]:
+    chunks: list[Chunk] = []
+    ordinal = 0
+    parent_index = 0
+    for heading_path, body in _split_into_sections(doc.text):
+        full_path = doc.title if not heading_path else f"{doc.title} > {heading_path}"
+        for parent_piece in _split_body(body, parent_tokens, overlap_tokens):
+            parent_text = f"{full_path}\n\n{parent_piece}" if full_path else parent_piece
+            parent_id = hashlib.sha256(
+                f"{doc.path}|parent|{parent_index}".encode("utf-8")
+            ).hexdigest()
+            for child_piece in _split_body(parent_piece, child_tokens, overlap_tokens):
+                child_text = f"{full_path}\n\n{child_piece}" if full_path else child_piece
+                chunk_id = hashlib.sha256(
+                    f"{doc.path}|{ordinal}|{child_piece}".encode("utf-8")
+                ).hexdigest()
+                chunks.append(Chunk(
+                    text=child_text, source_path=doc.path, title=doc.title,
+                    heading_path=heading_path or doc.title, ordinal=ordinal,
+                    chunk_id=chunk_id, parent_id=parent_id, parent_text=parent_text,
+                ))
+                ordinal += 1
+            parent_index += 1
+    return chunks
+
+
+def chunk_document(doc: Document, target_tokens: int = 512,
+                   overlap_tokens: int = 64, parent_document: bool = False,
+                   parent_target_tokens: int = 1024,
+                   child_target_tokens: int = 256) -> list[Chunk]:
+    if not parent_document:
+        return _chunk_flat(doc, target_tokens, overlap_tokens)
+    return _chunk_parent(doc, parent_target_tokens, child_target_tokens, overlap_tokens)

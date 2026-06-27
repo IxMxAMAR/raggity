@@ -19,6 +19,8 @@ class Chunk:
     ordinal: int
     chunk_id: str
     score: float = 0.0
+    parent_id: str = ""
+    parent_text: str = ""
 
 
 @dataclass

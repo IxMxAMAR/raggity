@@ -26,6 +26,11 @@ class RetrievalConfig(BaseModel):
     top_k: int = 5
     dedup_cosine: float = 0.92
     relevance_floor: float = 0.3
+    parent_document: bool = False
+    parent_target_tokens: int = 1024
+    child_target_tokens: int = 256
+    expand: bool = False
+    expand_n: int = 3
 
 
 class GenerationConfig(BaseModel):
