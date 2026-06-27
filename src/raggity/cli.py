@@ -94,5 +94,19 @@ def eval_cmd(golden: str = typer.Argument(...),
                   f"Recall@{k}={res.recall:.3f}  (n={res.n})")
 
 
+@app.command()
+def serve(config: str = typer.Option(None, "--config"),
+          host: str = typer.Option("127.0.0.1", "--host"),
+          port: int = typer.Option(8000, "--port")):
+    """Run the local HTTP API server."""
+    try:
+        import uvicorn
+        from .server import create_app
+    except ImportError:
+        console.print("[red]The server needs extra deps:[/red] pip install raggity[server]")
+        raise typer.Exit(1)
+    uvicorn.run(create_app(load_config(config)), host=host, port=port)
+
+
 if __name__ == "__main__":
     app()
