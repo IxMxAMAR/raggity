@@ -28,7 +28,7 @@ Log in once with the Claude CLI:
 claude login
 ```
 
-Leave `generation.auth = "auto"` in your config (the default). raggity will use your subscription session — no API key needed.
+Leave `generation.auth = "auto"` in your config (the default). raggity will use your subscription session when no `ANTHROPIC_API_KEY` is set — no API key needed.
 
 ### API key
 
@@ -42,7 +42,9 @@ If you prefer to use an API key instead:
 
 2. Set `auth = "api_key"` in `raggity.toml` under `[generation]`.
 
-The `"auto"` mode tries the subscription session first and falls back to the key if `ANTHROPIC_API_KEY` is set. Set `auth = "subscription"` to hard-require subscription and never touch the key.
+- `auth = "subscription"` — uses your `claude login` session. **`ANTHROPIC_API_KEY` is intentionally ignored**, even if set; the SDK cannot fall back to a per-token key.
+- `auth = "api_key"` — requires `ANTHROPIC_API_KEY` to be set; raises an error at startup if missing.
+- `auth = "auto"` (default) — uses a key if `ANTHROPIC_API_KEY` is present, otherwise falls back to the subscription session.
 
 ---
 
@@ -128,7 +130,7 @@ Sources → Chunker → Embedder → LanceDB
 - **Hybrid retrieval**: dense vector search + BM25 full-text search, fused with Reciprocal Rank Fusion (RRF, k=60).
 - **Cross-encoder reranking**: enabled by default (`rerank = true`). Uses a local ONNX cross-encoder to re-score candidate chunks against the query before selection.
 - **Deduplication**: chunks with cosine similarity >= `dedup_cosine` (default 0.92) are collapsed.
-- **Relevance floor**: chunks scoring below `relevance_floor` are dropped before generation. This threshold is calibrated to cross-encoder scores when `rerank = true`; when reranking is off, it applies to vector similarity scores — you may need to lower it (e.g. 0.1–0.2).
+- **Relevance floor**: when `rerank = true`, chunks whose sigmoid-normalised cross-encoder score falls below `relevance_floor` are dropped before generation. The floor is **not applied** when `rerank = false` — abstention then triggers only when retrieval returns no candidates at all.
 - **Lost-in-the-middle reorder**: top chunks are placed at the start and end of the context window where LLMs attend best.
 - **Selective abstention**: if no chunk clears the relevance floor, raggity returns a canned "I don't have enough information" message without calling the API.
 - **Verified citations**: inline citation markers in the answer are cross-checked against the retrieved chunks; only markers that match a real retrieved source are preserved.
@@ -137,7 +139,7 @@ Sources → Chunker → Embedder → LanceDB
 
 ## Tuning
 
-`relevance_floor` is the main knob. When `rerank = true` (default), it is compared against cross-encoder scores (range roughly 0–1); the default 0.3 is a reasonable starting point. When `rerank = false`, it applies to raw cosine similarity — you may need to lower it significantly (0.1–0.2) to avoid over-abstaining.
+`relevance_floor` is the main knob. When `rerank = true` (default), cross-encoder logits are sigmoid-normalised to (0, 1) before comparison; the default 0.3 is a good starting point. When `rerank = false`, the floor is not applied at all — candidates pass straight to dedup and top-k selection regardless of their score.
 
 Other useful knobs in `[retrieval]`:
 

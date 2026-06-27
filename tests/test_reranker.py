@@ -25,3 +25,13 @@ def test_rerank_orders_relevant_first(rr):
 
 def test_rerank_empty_returns_empty(rr):
     assert rr.rerank("q", []) == []
+
+
+def test_rerank_scores_in_zero_one(rr):
+    chunks = [
+        _chunk("c1", "the weather is sunny and warm today"),
+        _chunk("c2", "to back up your data, copy it to the NAS nightly"),
+    ]
+    out = rr.rerank("how do I back up my data?", chunks)
+    for c in out:
+        assert 0.0 < c.score < 1.0, f"score {c.score} not in (0, 1)"

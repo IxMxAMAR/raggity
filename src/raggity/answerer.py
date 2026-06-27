@@ -22,13 +22,33 @@ class ClaudeAgentAnswerer(Answerer):
         self.auth = auth
 
     def _options(self) -> ClaudeAgentOptions:
-        # subscription-primary: in subscription mode, don't pass an API key.
-        # api_key mode requires ANTHROPIC_API_KEY in env (the SDK picks it up).
-        if self.auth == "api_key" and not os.environ.get("ANTHROPIC_API_KEY"):
-            raise RuntimeError(
-                "auth='api_key' but ANTHROPIC_API_KEY is not set. "
-                "Set the key, or use auth='subscription' after `claude login`."
+        if self.auth == "subscription":
+            # Subscription-primary: pass os.environ minus ANTHROPIC_API_KEY so
+            # the Agent SDK cannot fall back to a per-token API key and must use
+            # the `claude login` subscription session.
+            env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+            return ClaudeAgentOptions(
+                system_prompt=SYSTEM_PROMPT,
+                model=self.model,
+                allowed_tools=[],
+                permission_mode="dontAsk",
+                env=env,
             )
+        if self.auth == "api_key":
+            # api_key mode: the SDK reads ANTHROPIC_API_KEY from the environment.
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                raise RuntimeError(
+                    "auth='api_key' but ANTHROPIC_API_KEY is not set. "
+                    "Set the key, or use auth='subscription' after `claude login`."
+                )
+            return ClaudeAgentOptions(
+                system_prompt=SYSTEM_PROMPT,
+                model=self.model,
+                allowed_tools=[],
+                permission_mode="dontAsk",
+            )
+        # auth == "auto": leave env untouched — SDK resolves key-first, then
+        # subscription session if no key is present.
         return ClaudeAgentOptions(
             system_prompt=SYSTEM_PROMPT,
             model=self.model,

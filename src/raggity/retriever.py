@@ -68,9 +68,16 @@ class Retriever:
             return []
         if self.cfg.rerank:
             candidates = self.reranker.rerank(query, candidates)
-        survivors = [c for c in candidates if c.score >= self.cfg.relevance_floor]
-        if not survivors:
-            return []  # abstain signal
+            # Relevance floor is calibrated to reranker (sigmoid 0–1) scores.
+            # Only apply it — and the floor-based abstain — when reranking is on.
+            survivors = [c for c in candidates if c.score >= self.cfg.relevance_floor]
+            if not survivors:
+                return []  # abstain signal
+        else:
+            # When rerank is off, candidate scores are heterogeneous
+            # (cosine ~0–1, BM25 ~0–15), so a single floor threshold is
+            # meaningless. Skip the filter; abstain only when no candidates exist.
+            survivors = candidates
         survivors = dedup_chunks(survivors, self.embedder, self.cfg.dedup_cosine)
         top = survivors[: self.cfg.top_k]
         return order_lost_in_middle(top)

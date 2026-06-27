@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 
 from .models import Chunk
 from .registry import register
+
+log = logging.getLogger("raggity.store")
 
 TABLE = "chunks"
 
@@ -72,7 +75,10 @@ class LanceDBStore(VectorStore):
             try:
                 self._tbl.create_fts_index("text", use_tantivy=False, replace=True)
             except Exception:
-                pass
+                log.warning(
+                    "raggity.store: could not build FTS (BM25) index — "
+                    "hybrid search will degrade to dense-only."
+                )
             self._fts_ready = True
 
     def upsert(self, chunks: list[Chunk], embedder) -> None:
@@ -115,6 +121,7 @@ class LanceDBStore(VectorStore):
             rows = (self._tbl.search(query, query_type="fts")
                     .limit(limit).to_list())
         except Exception:
+            log.warning("raggity.store: FTS query failed — returning empty result.")
             return []
         out = []
         for r in rows:

@@ -76,3 +76,17 @@ def test_retrieve_abstains_below_floor():
     cfg = RetrievalConfig(candidates=10, top_k=3, rerank=True, relevance_floor=0.3)
     r = Retriever(FakeEmbedder(), FakeStore(vec, txt), FakeReranker(), cfg)
     assert r.retrieve("q") == []  # all below floor → abstain signal
+
+
+def test_retrieve_no_floor_when_rerank_off():
+    # Candidates have scores below 0.3 (e.g. BM25 raw scores or low cosine).
+    # With rerank=False the floor must NOT be applied — all candidates should
+    # pass through dedup and top_k, not trigger abstention.
+    vec = [_chunk("c1", "something useful", score=0.05),
+           _chunk("c2", "other text", score=0.1)]
+    txt = []
+    cfg = RetrievalConfig(candidates=10, top_k=5, rerank=False,
+                          relevance_floor=0.3, hybrid=False)
+    r = Retriever(FakeEmbedder(), FakeStore(vec, txt), FakeReranker(), cfg)
+    out = r.retrieve("q")
+    assert len(out) > 0, "floor should be bypassed when rerank=False"
