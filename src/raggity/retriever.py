@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 from .models import Chunk
 from .store import rrf_fuse
@@ -49,7 +50,6 @@ def expand_to_parents(chunks: list[Chunk]) -> list[Chunk]:
         if cur is None or c.score > cur.score:
             best_by_parent[c.parent_id] = c
     for c in best_by_parent.values():
-        from dataclasses import replace
         out.append(replace(c, text=c.parent_text))
     return out
 

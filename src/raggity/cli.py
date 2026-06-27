@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import typer
 from rich.console import Console
 
@@ -75,7 +76,6 @@ def status(config: str = typer.Option(None, "--config")):
 def reindex(config: str = typer.Option(None, "--config"),
             force: bool = typer.Option(False, "--force")):
     """Rebuild the index from scratch."""
-    import shutil
     cfg = load_config(config)
     if force:
         shutil.rmtree(cfg.index.path, ignore_errors=True)

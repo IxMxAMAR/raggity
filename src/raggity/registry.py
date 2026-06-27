@@ -13,7 +13,7 @@ def register(role: str, name: str, dotted: str) -> None:
     _REGISTRY[(role, name)] = dotted
 
 
-def resolve(role: str, name: str):
+def resolve(role: str, name: str) -> type:
     dotted = _REGISTRY.get((role, name))
     if dotted is None:
         raise BackendNotFound(

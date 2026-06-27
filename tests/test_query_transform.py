@@ -36,3 +36,12 @@ async def test_generate_query_variations_respects_n(monkeypatch):
     out = await qt.generate_query_variations("q", n=2)
     # original + up to 2 variations = at most 3
     assert len(out) <= 3
+
+
+async def test_generate_query_variations_exact_count(monkeypatch):
+    async def _fake_query(prompt, options):
+        yield _AssistantMessage("v1\nv2\nv3\nv4\nv5")
+    monkeypatch.setattr(qt, "query", _fake_query)
+    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
+    out = await qt.generate_query_variations("orig", n=2)
+    assert out == ["orig", "v1", "v2"]

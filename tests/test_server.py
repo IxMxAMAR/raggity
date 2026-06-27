@@ -33,3 +33,6 @@ def test_server_ingest_status_ask(tmp_path, monkeypatch):
         body = resp.json()
         assert "NAS" in body["answer"]
         assert body["abstained"] is False
+        assert isinstance(body["citations"], list)
+        for c in body["citations"]:
+            assert set(c.keys()) == {"chunk_id", "source_path", "title", "supported"}
