@@ -29,3 +29,7 @@ model = "claude-opus-4-8"
 
 [index]
 path = ".raggity/index"
+# backend = "qdrant"           # use Qdrant instead of LanceDB (pip install raggity[qdrant])
+# qdrant_location = "http://localhost:6333"  # or ":memory:" (non-persistent) or a local path
+# qdrant_collection = "raggity"
+# qdrant_api_key = "..."       # or set QDRANT_API_KEY env var (takes precedence)

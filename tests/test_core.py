@@ -107,6 +107,23 @@ def test_aask_cache_hit_skips_model(tmp_path, monkeypatch):
     assert calls["n"] == 1
 
 
+def test_core_qdrant_backend_ingest_ask(tmp_path, monkeypatch):
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(sources=SourcesConfig(include=[str(notes / "*.md")]),
+                        index=IndexConfig(path=str(tmp_path / "idx"), backend="qdrant",
+                                          qdrant_location=":memory:", qdrant_collection="t"))
+    async def _fake_query(prompt, options):
+        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+    monkeypatch.setattr(answerer_mod, "query", _fake_query)
+    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    from raggity.core import Raggity
+    rag = Raggity(cfg); rag.ingest()
+    assert rag.status()["chunks"] >= 1
+    ans = rag.ask("how are backups done?")
+    assert "NAS" in ans.text
+
+
 def test_aask_decompose_merges_and_answers(tmp_path, monkeypatch):
     notes = tmp_path / "notes"; notes.mkdir()
     (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
