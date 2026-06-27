@@ -63,3 +63,12 @@ async def test_step_back_returns_question(monkeypatch):
     monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
     out = await qt.generate_step_back_question("when did the last NAS backup run?")
     assert out.strip().endswith("?")
+
+
+async def test_decompose_returns_subquestions(monkeypatch):
+    async def _fq(prompt, options):
+        yield _AssistantMessage("What backup software is used?\nHow often do backups run?\nWhere are backups stored?")
+    monkeypatch.setattr(qt, "query", _fq)
+    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
+    out = await qt.decompose_question("explain the backup setup", n=3)
+    assert len(out) == 3 and "How often do backups run?" in out

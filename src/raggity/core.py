@@ -84,6 +84,21 @@ class Raggity:
             chunks = self.retriever.retrieve_multi(queries, question)
         return await self.answerer.answer(question, chunks)
 
+    def ask_decompose(self, question: str) -> Answer:
+        return asyncio.run(self.aask_decompose(question))
+
+    async def aask_decompose(self, question: str) -> Answer:
+        from .query_transform import decompose_question
+        subs = await decompose_question(question, self.cfg.retrieval.expand_n,
+                                        model=self.cfg.generation.model,
+                                        auth=self.cfg.generation.auth)
+        merged: dict[str, object] = {}
+        for q in [question] + subs:
+            for c in self.retriever.retrieve(q):
+                merged.setdefault(c.chunk_id, c)
+        chunks = list(merged.values())[: max(self.cfg.retrieval.top_k * 2, self.cfg.retrieval.top_k)]
+        return await self.answerer.answer(question, chunks)
+
     async def aask_stream(self, question: str, expand: bool | None = None,
                           hyde: bool | None = None, step_back: bool | None = None,
                           use_cache: bool | None = None):
