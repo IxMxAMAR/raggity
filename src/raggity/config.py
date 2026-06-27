@@ -30,6 +30,8 @@ class RetrievalConfig(BaseModel):
     child_target_tokens: int = 256
     expand: bool = False
     expand_n: int = 3
+    hyde: bool = False
+    step_back: bool = False
 
 
 class GenerationConfig(BaseModel):
