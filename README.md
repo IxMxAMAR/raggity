@@ -250,6 +250,8 @@ rag watch
 
 raggity monitors all paths in `sources.include` recursively. When files change, it triggers a debounced re-index (default 2 s of quiet before the ingest runs, coalescing rapid filesystem events into a single call).
 
+Use the `--debounce` CLI flag to customize the delay:
+
 ```bash
 rag watch --debounce 5.0   # wait 5 s of quiet before re-indexing
 ```
@@ -280,12 +282,12 @@ LanceDB (the default) requires no extra install and is the recommended choice fo
 
 ### Batch and parallel embedding
 
-raggity automatically batches embedding calls (default `batch_size = 32`). Parallel workers (`parallel = 0` = auto) are used when supported by the model. Configure in `raggity.toml`:
+raggity automatically batches embedding calls (default `batch_size = 256`). Parallel workers (`parallel = 0` = auto) are used when supported by the model. Configure in `raggity.toml`:
 
 ```toml
 [embedding]
-batch_size = 64    # increase for faster ingest on large corpora
-parallel = 4       # number of parallel embedding workers (0 = auto)
+batch_size = 256   # increase for faster ingest on large corpora
+parallel = 0       # number of parallel embedding workers (0 = auto)
 ```
 
 ### Embedding cache
@@ -294,14 +296,14 @@ To avoid re-embedding unchanged chunks across ingest runs, enable the embedding 
 
 ```toml
 [embedding]
-cache = ".raggity/embed_cache.db"   # SQLite path; omit to disable
+cache = true       # cache embeddings as JSON under the index directory
 ```
 
-Cached embeddings are looked up by content hash before calling the embedding model — useful when you frequently run `rag ingest` on large corpora with small diffs.
+Cached embeddings are stored as JSON at `<index.path>/embed_cache.json` and are looked up by content hash before calling the embedding model — useful when you frequently run `rag ingest` on large corpora with small diffs.
 
 ### ANN auto-index
 
-raggity automatically builds an Approximate Nearest Neighbor (ANN) index on the vector store once the collection grows past a threshold (default 10 000 chunks). This keeps search latency flat as your knowledge base scales. Configure the threshold:
+raggity automatically builds an Approximate Nearest Neighbor (ANN) index on the vector store once the collection grows past a threshold (default 50 000 chunks). This keeps search latency flat as your knowledge base scales. Configure the threshold:
 
 ```toml
 [index]

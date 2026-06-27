@@ -4,11 +4,11 @@ include = ["~/notes/**/*.md", "~/docs/**/*.pdf"]
 [embedding]
 model = "BAAI/bge-small-en-v1.5"
 provider = "cpu"          # cpu | cuda | directml | rocm
+batch_size = 256          # chunks per embedding call (default; increase for faster ingest on large corpora)
+parallel = 0              # embedding workers (0 = auto)
+cache = false             # cache embeddings as JSON under index directory
 # Larger embedding model (768-dim, MRL, 8k context) — requires `rag reindex --force`:
 # model = "nomic-embed-text-v1.5-Q"
-# batch_size = 32         # chunks per embedding call (increase for large corpora)
-# parallel = 0            # embedding workers (0 = auto)
-# cache = ".raggity/embed_cache.db"  # SQLite embedding cache; omit to disable
 
 [retrieval]
 hybrid = true
@@ -32,12 +32,12 @@ model = "claude-opus-4-8"
 
 [index]
 path = ".raggity/index"
-# backend = "qdrant"           # use Qdrant instead of LanceDB (pip install raggity[qdrant])
-# qdrant_location = "http://localhost:6333"  # or ":memory:" (non-persistent) or a local path
+backend = "lancedb"          # lancedb (default) | qdrant
+ann_threshold = 50000        # build ANN index once chunk count exceeds this
+# qdrant_location = "http://localhost:6333"  # only when backend = "qdrant"; or ":memory:" (non-persistent) or a local path
 # qdrant_collection = "raggity"
-# qdrant_api_key = "..."       # or set QDRANT_API_KEY env var (takes precedence)
-# ann_threshold = 10000        # build ANN index once chunk count exceeds this
+# qdrant_api_key = "..."                     # or set QDRANT_API_KEY env var (takes precedence)
 
-# [watch]
-# debounce = 2.0              # seconds of quiet before re-indexing after file changes
-#                             # (use `rag watch` command; requires pip install raggity[watch])
+# Watch daemon: `rag watch [--debounce SECONDS]`
+# Use `--debounce` CLI flag (not a config key) to customize quiet time before re-indexing
+# Requires: pip install raggity[watch]
