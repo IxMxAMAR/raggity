@@ -7,3 +7,6 @@ __pycache__/
 dist/
 build/
 .venv/
+
+# stray test logs
+test_output.txt
