@@ -27,7 +27,13 @@ class RetrievalConfig(BaseModel):
     rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     top_k: int = 5
     dedup_cosine: float = 0.92
-    relevance_floor: float = 0.3
+    # Dense-cosine sufficiency floor: governs abstention. Reliable signal (~0.6–0.8
+    # for relevant, ~0.43–0.47 for off-topic). When max_dense < this value, abstain.
+    sufficiency_floor: float = 0.5
+    # OPTIONAL secondary rerank-score filter. 0.0 = off (default). Only applied when
+    # rerank=True and relevance_floor > 0. Cross-encoder absolute score is unreliable
+    # for abstention, so this is off by default.
+    relevance_floor: float = 0.0
     parent_document: bool = False
     parent_target_tokens: int = 1024
     child_target_tokens: int = 256

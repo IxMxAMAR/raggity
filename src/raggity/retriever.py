@@ -61,53 +61,74 @@ class Retriever:
         self.reranker = reranker
         self.cfg = cfg
 
-    def _hybrid(self, query: str) -> list[Chunk]:
-        n = self.cfg.candidates
-        qv = self.embedder.embed_query(query)
-        dense = self.store.vector_search(qv, n)
-        if not self.cfg.hybrid:
-            return dense
-        sparse = self.store.text_search(query, n)
-        by_id: dict[str, Chunk] = {c.chunk_id: c for c in dense}
-        for c in sparse:
-            by_id.setdefault(c.chunk_id, c)
-        fused = rrf_fuse(
-            [[c.chunk_id for c in dense], [c.chunk_id for c in sparse]],
-            k=self.cfg.rrf_k,
-        )
-        ranked_ids = sorted(fused, key=lambda cid: fused[cid], reverse=True)
-        return [by_id[cid] for cid in ranked_ids if cid in by_id][:n]
-
     def retrieve(self, query: str) -> list[Chunk]:
         return self.retrieve_multi([query], query)
 
     def retrieve_multi(self, queries: list[str], rerank_query: str) -> list[Chunk]:
-        # gather candidates per query, fuse by RRF across all
-        per_query_ids: list[list[str]] = []
+        """Gather candidates across all queries, fuse via RRF, rerank, then return top-k.
+
+        Abstention is keyed on the DENSE cosine similarity (reliable: relevant ~0.6–0.8,
+        off-topic ~0.43–0.47).  The cross-encoder (reranker) is used only for ORDERING;
+        its absolute score does NOT govern abstention.
+        """
+        n = self.cfg.candidates
+        per_query_dense_ids: list[list[str]] = []
+        per_query_sparse_ids: list[list[str]] = []
         by_id: dict[str, Chunk] = {}
+        max_dense: float = 0.0
+
         for q in queries:
-            cands = self._hybrid(q)
-            per_query_ids.append([c.chunk_id for c in cands])
-            for c in cands:
+            qv = self.embedder.embed_query(q)
+            dense = self.store.vector_search(qv, n)
+            # Track max dense score across all queries for abstention decision
+            if dense:
+                max_dense = max(max_dense, max(c.score for c in dense))
+            dense_ids = [c.chunk_id for c in dense]
+            per_query_dense_ids.append(dense_ids)
+            for c in dense:
                 by_id.setdefault(c.chunk_id, c)
-        if not by_id:
+
+            if self.cfg.hybrid:
+                sparse = self.store.text_search(q, n)
+                sparse_ids = [c.chunk_id for c in sparse]
+                per_query_sparse_ids.append(sparse_ids)
+                for c in sparse:
+                    by_id.setdefault(c.chunk_id, c)
+            else:
+                per_query_sparse_ids.append([])
+
+        # Build ranked candidate list
+        if self.cfg.hybrid:
+            # Fuse dense + sparse lists from all queries
+            all_id_lists = per_query_dense_ids + per_query_sparse_ids
+            fused = rrf_fuse(all_id_lists, k=self.cfg.rrf_k)
+            ranked_ids = sorted(fused, key=lambda cid: fused[cid], reverse=True)
+            candidates = [by_id[cid] for cid in ranked_ids if cid in by_id][:n]
+        else:
+            # Dense-only: preserve order from first query's dense results
+            all_ids: list[str] = []
+            seen: set[str] = set()
+            for id_list in per_query_dense_ids:
+                for cid in id_list:
+                    if cid not in seen:
+                        all_ids.append(cid)
+                        seen.add(cid)
+            candidates = [by_id[cid] for cid in all_ids if cid in by_id][:n]
+
+        # ABSTAIN: dense cosine is the reliable relevance signal.
+        # If max_dense < sufficiency_floor, the top retrieved doc is not relevant enough.
+        if not candidates or max_dense < self.cfg.sufficiency_floor:
             return []
-        fused = rrf_fuse(per_query_ids, k=self.cfg.rrf_k)
-        ranked = sorted(fused, key=lambda cid: fused[cid], reverse=True)
-        candidates = [by_id[cid] for cid in ranked if cid in by_id][: self.cfg.candidates]
+
         if self.cfg.rerank:
             candidates = self.reranker.rerank(rerank_query, candidates)
-            # Relevance floor is calibrated to reranker (sigmoid 0–1) scores.
-            # Only apply it — and the floor-based abstain — when reranking is on.
-            survivors = [c for c in candidates if c.score >= self.cfg.relevance_floor]
-            if not survivors:
-                return []  # abstain signal
-        else:
-            # When rerank is off, candidate scores are heterogeneous
-            # (cosine ~0–1, BM25 ~0–15), so a single floor threshold is
-            # meaningless. Skip the filter; abstain only when no candidates exist.
-            survivors = candidates
-        survivors = dedup_chunks(survivors, self.embedder, self.cfg.dedup_cosine)
+            # OPTIONAL secondary rerank-score filter (off by default: relevance_floor=0.0).
+            # When enabled (relevance_floor > 0), filters low rerank scores but does NOT
+            # abstain if this empties the list — that's governed solely by dense signal above.
+            if self.cfg.relevance_floor > 0:
+                candidates = [c for c in candidates if c.score >= self.cfg.relevance_floor]
+
+        survivors = dedup_chunks(candidates, self.embedder, self.cfg.dedup_cosine)
         top = survivors[: self.cfg.top_k]
         ordered = order_lost_in_middle(top)
         if getattr(self.cfg, "parent_document", False):
