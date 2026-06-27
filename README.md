@@ -81,9 +81,14 @@ Both `rag` and `raggity` are registered as console scripts — they are identica
 | `rag ingest` | Incrementally index configured sources (hash-based, only processes changes) |
 | `rag ask "..."` | Ask a question; prints the answer with verified source footnotes |
 | `rag ask "..." --plain` | Pipe-friendly output — no Rich formatting, no footnotes |
+| `rag ask "..." --hyde` | HyDE query transform — generate a hypothetical passage to improve dense recall |
+| `rag ask "..." --step-back` | Step-back query transform — generate a broader question for higher-level context |
+| `rag ask "..." --decompose` | Decompose into sub-questions, retrieve for each, merge and answer |
+| `rag ask "..." --no-cache` | Bypass the answer cache even when `generation.cache = true` |
 | `rag status` | Show index statistics (chunk count, source count, index path) |
 | `rag reindex --force` | Wipe and rebuild the index from scratch |
 | `rag eval golden.jsonl` | Run retrieval quality metrics (Hit@k, MRR, Recall@k) against a golden set |
+| `rag eval golden.jsonl --llm-judge` | LLM-judge eval: faithfulness + answer relevance (2 model calls per question; self-assessed) |
 
 All commands accept `--config PATH` to point at a non-default config file.
 
@@ -149,6 +154,80 @@ Other useful knobs in `[retrieval]`:
 | `top_k` | 5 | Chunks passed to the LLM after all filtering |
 | `dedup_cosine` | 0.92 | Cosine threshold for dedup collapse |
 | `rrf_k` | 60 | RRF constant (higher = flatter fusion curve) |
+
+---
+
+## Phase 2.5 features
+
+### HyDE (Hypothetical Document Embeddings)
+
+The `--hyde` flag generates a hypothetical answer passage using Claude, then uses that passage (alongside the original question) as an additional query vector. This improves dense retrieval recall for questions where the answer vocabulary differs from the question vocabulary.
+
+```bash
+rag ask "What are the main tradeoffs of eventual consistency?" --hyde
+```
+
+Enable permanently in config:
+```toml
+[retrieval]
+hyde = true
+```
+
+### Step-back prompting
+
+The `--step-back` flag generates a broader, more abstract "step-back" question using Claude, retrieves for it alongside the original question, and merges the results. Useful for grounding specific questions in general principles.
+
+```bash
+rag ask "How do I configure the database connection pool?" --step-back
+```
+
+Enable permanently:
+```toml
+[retrieval]
+step_back = true
+```
+
+Both `--hyde` and `--step-back` add one model call each. They compose freely with `--expand` — all generated queries are fused via RRF.
+
+### Decompose
+
+The `--decompose` flag breaks a complex question into sub-questions using Claude, retrieves chunks for each sub-question independently, merges the candidates by chunk ID (dedup), and answers over the combined context. This is useful for multi-faceted questions that benefit from different retrieval angles.
+
+```bash
+rag ask "How do backups, retention policies, and restore procedures interact?" --decompose
+```
+
+`--decompose` overrides `--hyde`, `--step-back`, and `--expand` when combined.
+
+### Semantic answer cache
+
+When `generation.cache = true`, raggity stores answers in `<index.path>/answer_cache.json`, keyed on a SHA-256 hash of the question + retrieved chunk IDs (order-independent) + model name. On a cache hit, the stored answer is returned immediately — no model call.
+
+```toml
+[generation]
+cache = true
+```
+
+The cache is **off by default** — existing workflows are unaffected. To bypass the cache for a single query:
+
+```bash
+rag ask "..." --no-cache
+```
+
+Notes:
+- Cache hits are exact: same question + same retrieved chunks + same model.
+- The streaming path (`rag ask` without `--no-stream`) always calls the model; only the buffered path (`--no-stream` or `--plain`) reads/writes the cache.
+- The cache file is a plain JSON file and can be deleted to clear it.
+
+### LLM-judge eval
+
+```bash
+rag eval golden.jsonl --llm-judge
+```
+
+Reports `Faithfulness` (does the answer stay grounded in the retrieved chunks?) and `AnswerRelevance` (does the answer address the question?), each in [0, 1]. Each question costs two model calls.
+
+**Caveat:** self-assessed — the same model family that generates answers also grades them. Treat these scores as a sanity check, not ground truth.
 
 ---
 

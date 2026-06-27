@@ -18,10 +18,14 @@ rerank_model = "Xenova/ms-marco-MiniLM-L-6-v2"
 top_k = 5
 dedup_cosine = 0.92
 relevance_floor = 0.3
+# Query transforms (off by default — each adds one model call):
+# hyde = true         # generate a hypothetical answer passage to improve dense recall
+# step_back = true    # generate a broader "step-back" question to retrieve higher-level context
 
 [generation]
 auth = "auto"             # auto (subscription→key) | subscription | api_key
 model = "claude-opus-4-8"
+# cache = true        # cache answers keyed on question + retrieved chunks + model (off by default)
 
 [index]
 path = ".raggity/index"

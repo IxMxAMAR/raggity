@@ -37,6 +37,7 @@ class RetrievalConfig(BaseModel):
 class GenerationConfig(BaseModel):
     auth: str = "auto"  # auto | subscription | api_key
     model: str = "claude-opus-4-8"
+    cache: bool = False
 
 
 class IndexConfig(BaseModel):

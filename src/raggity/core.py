@@ -36,6 +36,9 @@ class Raggity:
     def _manifest_path(self) -> str:
         return os.path.join(self.cfg.index.path, "manifest.json")
 
+    def _cache_path(self) -> str:
+        return os.path.join(self.cfg.index.path, "answer_cache.json")
+
     def _fingerprint(self) -> str:
         rc = self.cfg.retrieval
         return (f"{self.cfg.embedding.model}|{self.embedder.dim}|"
@@ -82,7 +85,21 @@ class Raggity:
             chunks = self.retriever.retrieve(question)
         else:
             chunks = self.retriever.retrieve_multi(queries, question)
-        return await self.answerer.answer(question, chunks)
+        use_cache = self.cfg.generation.cache if use_cache is None else use_cache
+        key = None
+        if use_cache:
+            from . import cache as _cache
+            data = _cache.load(self._cache_path())
+            key = _cache.cache_key(question, [c.chunk_id for c in chunks], self.cfg.generation.model)
+            if key in data:
+                return _cache.answer_from_dict(data[key])
+        answer = await self.answerer.answer(question, chunks)
+        if use_cache and key is not None:
+            from . import cache as _cache
+            data = _cache.load(self._cache_path())
+            data[key] = _cache.answer_to_dict(answer)
+            _cache.save(self._cache_path(), data)
+        return answer
 
     def ask_decompose(self, question: str) -> Answer:
         return asyncio.run(self.aask_decompose(question))
