@@ -191,8 +191,15 @@ rag serve
 
 Endpoints:
 - `POST /ingest` — trigger incremental indexing
-- `GET /ask?q=...` — ask a question (returns JSON with answer, sources, citations)
+- `POST /ask` — ask a question; request body: `{"question": "...", "expand": false}` (returns JSON with `answer`, `abstained`, `citations`)
 - `GET /status` — index statistics
+
+Example:
+```bash
+curl -X POST http://localhost:8000/ask \
+  -H "content-type: application/json" \
+  -d '{"question": "How do I set up a new dev environment?"}'
+```
 
 The server respects your `raggity.toml` config, using the same auth, embedding, and retrieval settings as the CLI.
 
