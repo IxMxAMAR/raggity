@@ -66,6 +66,35 @@ async def test_api_key_auth_raises_without_key(monkeypatch):
         await answerer.answer("q", [_chunk("x1", "some relevant text")])
 
 
+async def test_answer_stream_yields_deltas_then_answer(monkeypatch):
+    from raggity.models import Answer
+    monkeypatch.setattr(answerer_mod, "query", _fake_query)
+    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    items = []
+    async for piece in ClaudeAgentAnswerer().answer_stream(
+            "when did I rotate the key?",
+            [_chunk("abcd1234ef", "rotated the API key on 2026-06-01")]):
+        items.append(piece)
+    assert isinstance(items[-1], Answer)
+    assert any(isinstance(p, str) for p in items[:-1])
+    assert "2026-06-01" in items[-1].text
+
+
+async def test_answer_stream_empty_chunks_abstains(monkeypatch):
+    from raggity.models import Answer
+    called = False
+
+    async def _no(prompt, options):
+        nonlocal called
+        called = True
+        yield _AssistantMessage("x")
+
+    monkeypatch.setattr(answerer_mod, "query", _no)
+    out = [p async for p in ClaudeAgentAnswerer().answer_stream("q", [])]
+    assert called is False
+    assert isinstance(out[-1], Answer) and out[-1].abstained is True
+
+
 async def test_subscription_auth_strips_api_key(monkeypatch):
     """auth='subscription' must pass env without ANTHROPIC_API_KEY to ClaudeAgentOptions,
     but must still include other env vars (not an empty dict)."""

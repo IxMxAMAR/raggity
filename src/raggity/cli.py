@@ -28,17 +28,33 @@ def ingest(config: str = typer.Option(None, "--config")):
 @app.command()
 def ask(question: str, config: str = typer.Option(None, "--config"),
         plain: bool = typer.Option(False, "--plain"),
-        expand: bool = typer.Option(False, "--expand")):
+        expand: bool = typer.Option(False, "--expand"),
+        no_stream: bool = typer.Option(False, "--no-stream")):
     """Ask a question against your knowledge base."""
+    import asyncio
     rag = _rag(config)
     if expand:
         typer.echo(f"Expanding query (+{rag.cfg.retrieval.expand_n} model calls)…", err=True)
-    answer = rag.ask(question, expand=True if expand else None)
-    if plain:
-        typer.echo(answer.text)
+    if plain or no_stream:
+        # Buffered path — unchanged behaviour
+        answer = rag.ask(question, expand=True if expand else None)
+        if plain:
+            typer.echo(answer.text)
+        else:
+            console.print(answer.text)
     else:
-        console.print(answer.text)
-    if answer.citations and not plain:
+        # Streaming path — default
+        async def _stream():
+            final = None
+            async for piece in rag.aask_stream(question, expand=True if expand else None):
+                if isinstance(piece, str):
+                    print(piece, end="", flush=True)
+                else:
+                    final = piece
+            print()
+            return final
+        answer = asyncio.run(_stream())
+    if answer is not None and answer.citations and not plain:
         console.print("\n[dim]Sources:[/dim]")
         seen = set()
         for c in answer.citations:

@@ -51,6 +51,19 @@ def test_ask_expand_flag(tmp_path, monkeypatch):
     assert r.exit_code == 0 and "NAS" in r.stdout
 
 
+def test_ask_streams_by_default(tmp_path, monkeypatch):
+    cfg = _make_config(tmp_path)
+    runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
+
+    async def _fake_query(prompt, options):
+        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+
+    monkeypatch.setattr(answerer_mod, "query", _fake_query)
+    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg])
+    assert r.exit_code == 0 and "NAS" in r.stdout
+
+
 def test_ask_plain(tmp_path, monkeypatch):
     cfg = _make_config(tmp_path)
     runner.invoke(cli_mod.app, ["ingest", "--config", cfg])

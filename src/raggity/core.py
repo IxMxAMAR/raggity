@@ -64,6 +64,20 @@ class Raggity:
             chunks = self.retriever.retrieve(question)
         return await self.answerer.answer(question, chunks)
 
+    async def aask_stream(self, question: str, expand: bool | None = None):
+        """Yield text-delta str items then a final Answer, streaming from the answerer."""
+        use_expand = self.cfg.retrieval.expand if expand is None else expand
+        if use_expand:
+            from .query_transform import generate_query_variations
+            queries = await generate_query_variations(
+                question, self.cfg.retrieval.expand_n,
+                model=self.cfg.generation.model, auth=self.cfg.generation.auth)
+            chunks = self.retriever.retrieve_multi(queries, question)
+        else:
+            chunks = self.retriever.retrieve(question)
+        async for piece in self.answerer.answer_stream(question, chunks):
+            yield piece
+
     def status(self) -> dict:
         return {
             "chunks": self.store.count(),
