@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "raggity"
+version = "0.1.0"
+description = "Local-first, top-tier RAG over your notes, docs, and PDFs — answered by Claude."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  "fastembed>=0.4",
+  "lancedb>=0.15",
+  "claude-agent-sdk>=0.1",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "platformdirs>=4.2",
+  "typer>=0.12",
+  "rich>=13.7",
+  "pypdf>=4.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+raggity = "raggity.cli:app"
+rag = "raggity.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/raggity"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src"]
