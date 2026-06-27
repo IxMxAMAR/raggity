@@ -49,32 +49,50 @@ class Raggity:
                           fingerprint=self._fingerprint(), chunk_kwargs=chunk_kwargs)
         return indexer.ingest(self.cfg.sources.include)
 
-    def ask(self, question: str, expand: bool | None = None) -> Answer:
-        return asyncio.run(self.aask(question, expand))
-
-    async def aask(self, question: str, expand: bool | None = None) -> Answer:
-        use_expand = self.cfg.retrieval.expand if expand is None else expand
+    async def _build_queries(self, question: str, expand, hyde, step_back) -> list[str]:
+        rc = self.cfg.retrieval
+        use_expand = rc.expand if expand is None else expand
+        use_hyde = rc.hyde if hyde is None else hyde
+        use_step = rc.step_back if step_back is None else step_back
+        m, a = self.cfg.generation.model, self.cfg.generation.auth
         if use_expand:
             from .query_transform import generate_query_variations
-            queries = await generate_query_variations(
-                question, self.cfg.retrieval.expand_n,
-                model=self.cfg.generation.model, auth=self.cfg.generation.auth)
-            chunks = self.retriever.retrieve_multi(queries, question)
+            queries = await generate_query_variations(question, rc.expand_n, model=m, auth=a)
         else:
+            queries = [question]
+        if use_hyde:
+            from .query_transform import generate_hyde_document
+            queries.append(await generate_hyde_document(question, model=m, auth=a))
+        if use_step:
+            from .query_transform import generate_step_back_question
+            queries.append(await generate_step_back_question(question, model=m, auth=a))
+        return queries
+
+    def ask(self, question: str, expand: bool | None = None,
+            hyde: bool | None = None, step_back: bool | None = None,
+            use_cache: bool | None = None) -> Answer:
+        return asyncio.run(self.aask(question, expand=expand, hyde=hyde,
+                                     step_back=step_back, use_cache=use_cache))
+
+    async def aask(self, question: str, expand: bool | None = None,
+                   hyde: bool | None = None, step_back: bool | None = None,
+                   use_cache: bool | None = None) -> Answer:
+        queries = await self._build_queries(question, expand, hyde, step_back)
+        if queries == [question]:
             chunks = self.retriever.retrieve(question)
+        else:
+            chunks = self.retriever.retrieve_multi(queries, question)
         return await self.answerer.answer(question, chunks)
 
-    async def aask_stream(self, question: str, expand: bool | None = None):
+    async def aask_stream(self, question: str, expand: bool | None = None,
+                          hyde: bool | None = None, step_back: bool | None = None,
+                          use_cache: bool | None = None):
         """Yield text-delta str items then a final Answer, streaming from the answerer."""
-        use_expand = self.cfg.retrieval.expand if expand is None else expand
-        if use_expand:
-            from .query_transform import generate_query_variations
-            queries = await generate_query_variations(
-                question, self.cfg.retrieval.expand_n,
-                model=self.cfg.generation.model, auth=self.cfg.generation.auth)
-            chunks = self.retriever.retrieve_multi(queries, question)
-        else:
+        queries = await self._build_queries(question, expand, hyde, step_back)
+        if queries == [question]:
             chunks = self.retriever.retrieve(question)
+        else:
+            chunks = self.retriever.retrieve_multi(queries, question)
         async for piece in self.answerer.answer_stream(question, chunks):
             yield piece
 

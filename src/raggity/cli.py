@@ -30,15 +30,20 @@ def ingest(config: str = typer.Option(None, "--config")):
 def ask(question: str, config: str = typer.Option(None, "--config"),
         plain: bool = typer.Option(False, "--plain"),
         expand: bool = typer.Option(False, "--expand"),
+        hyde: bool = typer.Option(False, "--hyde"),
+        step_back: bool = typer.Option(False, "--step-back"),
         no_stream: bool = typer.Option(False, "--no-stream")):
     """Ask a question against your knowledge base."""
     import asyncio
     rag = _rag(config)
-    if expand:
-        typer.echo(f"Expanding query (+{rag.cfg.retrieval.expand_n} model calls)…", err=True)
+    if expand or hyde or step_back:
+        typer.echo("Query transforms enabled (+model calls)…", err=True)
+    expand_arg = True if expand else None
+    hyde_arg = True if hyde else None
+    step_back_arg = True if step_back else None
     if plain or no_stream:
         # Buffered path — unchanged behaviour
-        answer = rag.ask(question, expand=True if expand else None)
+        answer = rag.ask(question, expand=expand_arg, hyde=hyde_arg, step_back=step_back_arg)
         if plain:
             typer.echo(answer.text)
         else:
@@ -47,7 +52,8 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
         # Streaming path — default
         async def _stream():
             final = None
-            async for piece in rag.aask_stream(question, expand=True if expand else None):
+            async for piece in rag.aask_stream(question, expand=expand_arg,
+                                               hyde=hyde_arg, step_back=step_back_arg):
                 if isinstance(piece, str):
                     print(piece, end="", flush=True)
                 else:

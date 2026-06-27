@@ -45,3 +45,21 @@ async def test_generate_query_variations_exact_count(monkeypatch):
     monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
     out = await qt.generate_query_variations("orig", n=2)
     assert out == ["orig", "v1", "v2"]
+
+
+async def test_hyde_returns_passage(monkeypatch):
+    async def _fq(prompt, options):
+        yield _AssistantMessage("Backups are written nightly to the NAS device.")
+    monkeypatch.setattr(qt, "query", _fq)
+    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
+    out = await qt.generate_hyde_document("how are backups done?")
+    assert "NAS" in out
+
+
+async def test_step_back_returns_question(monkeypatch):
+    async def _fq(prompt, options):
+        yield _AssistantMessage("What is the overall backup strategy?")
+    monkeypatch.setattr(qt, "query", _fq)
+    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
+    out = await qt.generate_step_back_question("when did the last NAS backup run?")
+    assert out.strip().endswith("?")

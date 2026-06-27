@@ -46,3 +46,42 @@ def test_core_ask_uses_pipeline(tmp_path, monkeypatch):
     rag.ingest()
     ans = rag.ask("how are backups done?")
     assert "NAS" in ans.text
+
+
+def test_core_ask_hyde_routes_retrieve_multi(tmp_path, monkeypatch):
+    """aask with hyde=True must call retrieve_multi (not retrieve) and return an answer."""
+    import raggity.query_transform as qt
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+    )
+
+    # Mock qt.query to return a HyDE passage
+    async def _fake_qt(prompt, options):
+        yield _AssistantMessage("Backups are stored on a NAS device nightly.")
+    monkeypatch.setattr(qt, "query", _fake_qt)
+    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
+
+    # Mock answerer query to return a final answer
+    async def _fake_answer(prompt, options):
+        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+    monkeypatch.setattr(answerer_mod, "query", _fake_answer)
+    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+
+    from raggity.core import Raggity
+    rag = Raggity(cfg)
+    rag.ingest()
+
+    retrieve_multi_calls = []
+    original_retrieve_multi = rag.retriever.retrieve_multi
+    def _spy_multi(queries, question):
+        retrieve_multi_calls.append(queries)
+        return original_retrieve_multi(queries, question)
+    monkeypatch.setattr(rag.retriever, "retrieve_multi", _spy_multi)
+
+    ans = rag.ask("how are backups done?", hyde=True)
+    assert "NAS" in ans.text
+    assert len(retrieve_multi_calls) == 1, "retrieve_multi must be called when hyde=True"
+    assert len(retrieve_multi_calls[0]) >= 2, "queries list must include original + hyde passage"
