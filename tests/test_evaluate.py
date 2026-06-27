@@ -27,3 +27,16 @@ def test_evaluate_negative_correctly_zero_when_expected_empty():
     golden = [{"question": "nope", "relevant_source_paths": []}]
     res = evaluate(FakeRetriever(), golden, k=5)
     assert res.hit_rate == 1.0
+
+
+def test_evaluate_recall_positive():
+    from raggity.evaluate import evaluate
+    golden = [{"question": "how are backups done?", "relevant_source_paths": ["a.md"]}]
+    res = evaluate(FakeRetriever(), golden, k=5)
+    assert res.recall == 1.0
+
+
+def test_evaluate_n_zero():
+    from raggity.evaluate import evaluate, EvalResult
+    res = evaluate(FakeRetriever(), [], k=5)
+    assert res == EvalResult(0.0, 0.0, 0.0, 0)

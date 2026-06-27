@@ -26,3 +26,17 @@ def test_unsupported_extension_skipped(fixtures_dir, tmp_path):
     (tmp_path / "x.bin").write_bytes(b"\x00\x01")
     docs = load_documents([str(tmp_path / "*.bin")])
     assert docs == []
+
+
+def test_empty_file_skipped(tmp_path):
+    from raggity.loader import load_documents
+    (tmp_path / "empty.md").write_text("   \n")
+    assert load_documents([str(tmp_path / "*.md")]) == []
+
+
+def test_unreadable_pdf_skipped(tmp_path, caplog):
+    from raggity.loader import load_documents
+    (tmp_path / "bad.pdf").write_bytes(b"%PDF-1.4 not really a pdf")
+    # must skip (not raise), returning no docs for the bad file
+    docs = load_documents([str(tmp_path / "*.pdf")])
+    assert all(not d.path.endswith("bad.pdf") for d in docs)

@@ -43,3 +43,13 @@ def test_phase2_retrieval_defaults():
     assert r.child_target_tokens == 256
     assert r.expand is False
     assert r.expand_n == 3
+
+
+def test_remaining_defaults():
+    from raggity.config import RaggityConfig
+    c = RaggityConfig()
+    assert c.retrieval.candidates == 30
+    assert c.retrieval.dedup_cosine == 0.92
+    assert c.retrieval.rerank_model == "Xenova/ms-marco-MiniLM-L-6-v2"
+    assert c.index.path == ".raggity/index"
+    assert c.sources.include == []

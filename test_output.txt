@@ -1,0 +1,74 @@
+
+=================================== ERRORS ====================================
+___________________ ERROR collecting tests/test_answerer.py ___________________
+ImportError while importing test module 'C:\ComfyUI\RD\raggity\tests\test_answerer.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\amren\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_answerer.py:4: in <module>
+    from raggity.answerer import ClaudeAgentAnswerer
+src\raggity\answerer.py:6: in <module>
+    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage
+E   ModuleNotFoundError: No module named 'claude_agent_sdk'
+_____________________ ERROR collecting tests/test_cli.py ______________________
+ImportError while importing test module 'C:\ComfyUI\RD\raggity\tests\test_cli.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\amren\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_cli.py:1: in <module>
+    import raggity.cli as cli_mod
+src\raggity\cli.py:7: in <module>
+    from .core import Raggity
+src\raggity\core.py:6: in <module>
+    from .answerer import ClaudeAgentAnswerer
+src\raggity\answerer.py:6: in <module>
+    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage
+E   ModuleNotFoundError: No module named 'claude_agent_sdk'
+_____________________ ERROR collecting tests/test_core.py _____________________
+ImportError while importing test module 'C:\ComfyUI\RD\raggity\tests\test_core.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\amren\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_core.py:2: in <module>
+    import raggity.answerer as answerer_mod
+src\raggity\answerer.py:6: in <module>
+    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage
+E   ModuleNotFoundError: No module named 'claude_agent_sdk'
+_______________ ERROR collecting tests/test_query_transform.py ________________
+ImportError while importing test module 'C:\ComfyUI\RD\raggity\tests\test_query_transform.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\amren\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_query_transform.py:1: in <module>
+    import raggity.query_transform as qt
+src\raggity\query_transform.py:3: in <module>
+    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage
+E   ModuleNotFoundError: No module named 'claude_agent_sdk'
+____________________ ERROR collecting tests/test_server.py ____________________
+ImportError while importing test module 'C:\ComfyUI\RD\raggity\tests\test_server.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\amren\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_server.py:3: in <module>
+    import raggity.answerer as answerer_mod
+src\raggity\answerer.py:6: in <module>
+    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage
+E   ModuleNotFoundError: No module named 'claude_agent_sdk'
+=========================== short test summary info ===========================
+ERROR tests/test_answerer.py
+ERROR tests/test_cli.py
+ERROR tests/test_core.py
+ERROR tests/test_query_transform.py
+ERROR tests/test_server.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 5 errors during collection !!!!!!!!!!!!!!!!!!!
+5 errors in 0.70s
