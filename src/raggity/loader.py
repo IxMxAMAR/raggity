@@ -67,10 +67,11 @@ def load_documents(globs: list[str]) -> list[Document]:
         if not text.strip():
             log.warning("skipping empty/no-text file: %s", fp)
             continue
+        posix_path = p.as_posix()  # normalize to forward slashes cross-platform
         docs.append(
             Document(
-                path=fp,
-                title=_title_for(p, text),
+                path=posix_path,
+                title=_title_for(Path(posix_path), text),
                 text=text,
                 file_hash=compute_file_hash(fp),
                 mtime=p.stat().st_mtime,

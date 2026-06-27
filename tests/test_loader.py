@@ -40,3 +40,13 @@ def test_unreadable_pdf_skipped(tmp_path, caplog):
     # must skip (not raise), returning no docs for the bad file
     docs = load_documents([str(tmp_path / "*.pdf")])
     assert all(not d.path.endswith("bad.pdf") for d in docs)
+
+
+def test_document_path_is_posix(tmp_path):
+    """Document.path must use forward slashes regardless of OS (POSIX form)."""
+    (tmp_path / "notes.md").write_text("# My Notes\nContent here.")
+    docs = load_documents([str(tmp_path / "*.md")])
+    assert len(docs) == 1
+    assert "\\" not in docs[0].path, (
+        f"Document.path should be POSIX (no backslashes), got: {docs[0].path!r}"
+    )

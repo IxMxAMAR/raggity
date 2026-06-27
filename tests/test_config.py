@@ -53,3 +53,17 @@ def test_remaining_defaults():
     assert c.retrieval.rerank_model == "Xenova/ms-marco-MiniLM-L-6-v2"
     assert c.index.path == ".raggity/index"
     assert c.sources.include == []
+
+
+def test_sufficiency_floor_default():
+    """Dense-cosine sufficiency floor should default to 0.5."""
+    from raggity.config import RetrievalConfig
+    r = RetrievalConfig()
+    assert r.sufficiency_floor == 0.5
+
+
+def test_relevance_floor_default_is_zero():
+    """relevance_floor should default to 0.0 (off) so cross-encoder score never abstains by default."""
+    from raggity.config import RetrievalConfig
+    r = RetrievalConfig()
+    assert r.relevance_floor == 0.0
