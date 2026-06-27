@@ -1,0 +1,78 @@
+from raggity.models import Chunk
+from raggity.config import RetrievalConfig
+from raggity.retriever import Retriever, dedup_chunks, order_lost_in_middle
+
+
+def _chunk(cid, text, score=0.0):
+    return Chunk(text=text, source_path="a.md", title="A",
+                 heading_path="A", ordinal=0, chunk_id=cid, score=score)
+
+
+class FakeEmbedder:
+    dim = 3
+
+    def embed_query(self, text):
+        return [1.0, 0.0, 0.0]
+
+    def embed_documents(self, texts):
+        # near-identical vectors for "dup" texts; distinct for others
+        out = []
+        for t in texts:
+            if "dup" in t:
+                out.append([1.0, 0.0, 0.0])
+            else:
+                out.append([0.0, 1.0, 0.0])
+        return out
+
+
+class FakeStore:
+    def __init__(self, vec, txt):
+        self._vec, self._txt = vec, txt
+
+    def vector_search(self, qv, limit):
+        return self._vec[:limit]
+
+    def text_search(self, q, limit):
+        return self._txt[:limit]
+
+
+class FakeReranker:
+    def rerank(self, query, chunks):
+        # score = 1.0 if "relevant" in text else 0.1
+        out = []
+        for c in chunks:
+            c2 = Chunk(**{**c.__dict__, "score": 1.0 if "relevant" in c.text else 0.1})
+            out.append(c2)
+        out.sort(key=lambda c: c.score, reverse=True)
+        return out
+
+
+def test_dedup_removes_near_duplicates():
+    chunks = [_chunk("a", "dup text one", 0.9), _chunk("b", "dup text two", 0.8),
+              _chunk("c", "different", 0.7)]
+    kept = dedup_chunks(chunks, FakeEmbedder(), threshold=0.92)
+    ids = {c.chunk_id for c in kept}
+    assert "a" in ids and "c" in ids and "b" not in ids  # b duped against a
+
+
+def test_order_lost_in_middle_puts_best_at_ends():
+    chunks = [_chunk("a", "x", 0.9), _chunk("b", "x", 0.7), _chunk("c", "x", 0.5)]
+    ordered = order_lost_in_middle(chunks)
+    assert ordered[0].chunk_id == "a" and ordered[-1].chunk_id == "b"
+
+
+def test_retrieve_returns_topk_relevant():
+    vec = [_chunk("c1", "relevant alpha"), _chunk("c2", "noise")]
+    txt = [_chunk("c1", "relevant alpha")]
+    cfg = RetrievalConfig(candidates=10, top_k=1, rerank=True, relevance_floor=0.3)
+    r = Retriever(FakeEmbedder(), FakeStore(vec, txt), FakeReranker(), cfg)
+    out = r.retrieve("find relevant")
+    assert len(out) == 1 and out[0].chunk_id == "c1"
+
+
+def test_retrieve_abstains_below_floor():
+    vec = [_chunk("c2", "noise")]
+    txt = [_chunk("c2", "noise")]
+    cfg = RetrievalConfig(candidates=10, top_k=3, rerank=True, relevance_floor=0.3)
+    r = Retriever(FakeEmbedder(), FakeStore(vec, txt), FakeReranker(), cfg)
+    assert r.retrieve("q") == []  # all below floor → abstain signal
