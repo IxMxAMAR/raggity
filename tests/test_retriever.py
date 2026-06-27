@@ -1,6 +1,6 @@
 from raggity.models import Chunk
 from raggity.config import RetrievalConfig
-from raggity.retriever import Retriever, dedup_chunks, order_lost_in_middle
+from raggity.retriever import Retriever, dedup_chunks, order_lost_in_middle, expand_to_parents
 
 
 def _chunk(cid, text, score=0.0):
@@ -90,3 +90,31 @@ def test_retrieve_no_floor_when_rerank_off():
     r = Retriever(FakeEmbedder(), FakeStore(vec, txt), FakeReranker(), cfg)
     out = r.retrieve("q")
     assert len(out) > 0, "floor should be bypassed when rerank=False"
+
+
+def test_expand_to_parents_dedups_and_swaps_text():
+    c1 = _chunk("c1", "child one", score=0.9)
+    c1.parent_id = "p1"; c1.parent_text = "PARENT ONE FULL"
+    c2 = _chunk("c2", "child two", score=0.5)
+    c2.parent_id = "p1"; c2.parent_text = "PARENT ONE FULL"
+    c3 = _chunk("c3", "child three", score=0.7)
+    c3.parent_id = "p2"; c3.parent_text = "PARENT TWO FULL"
+    out = expand_to_parents([c1, c2, c3])
+    assert len(out) == 2                       # p1, p2
+    texts = {c.text for c in out}
+    assert texts == {"PARENT ONE FULL", "PARENT TWO FULL"}
+    p1 = next(c for c in out if c.parent_id == "p1")
+    assert p1.score == 0.9                      # best child's score kept
+
+
+def test_retrieve_parent_document_returns_parent_text():
+    from raggity.config import RetrievalConfig
+    from raggity.retriever import Retriever
+    a = _chunk("c1", "relevant child", score=0.0)
+    a.parent_id = "p1"; a.parent_text = "RELEVANT PARENT CONTEXT"
+    cfg = RetrievalConfig(candidates=10, top_k=3, rerank=True,
+                          relevance_floor=0.3, parent_document=True)
+    r = Retriever(FakeEmbedder(), FakeStore([a], [a]), FakeReranker(), cfg)
+    out = r.retrieve("find relevant")
+    assert len(out) == 1
+    assert out[0].text == "RELEVANT PARENT CONTEXT"

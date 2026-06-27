@@ -38,6 +38,22 @@ def order_lost_in_middle(chunks: list[Chunk]) -> list[Chunk]:
     return head + list(reversed(tail))
 
 
+def expand_to_parents(chunks: list[Chunk]) -> list[Chunk]:
+    out: list[Chunk] = []
+    best_by_parent: dict[str, Chunk] = {}
+    for c in chunks:
+        if not c.parent_id:
+            out.append(c)
+            continue
+        cur = best_by_parent.get(c.parent_id)
+        if cur is None or c.score > cur.score:
+            best_by_parent[c.parent_id] = c
+    for c in best_by_parent.values():
+        from dataclasses import replace
+        out.append(replace(c, text=c.parent_text))
+    return out
+
+
 class Retriever:
     def __init__(self, embedder, store, reranker, cfg) -> None:
         self.embedder = embedder
@@ -80,4 +96,7 @@ class Retriever:
             survivors = candidates
         survivors = dedup_chunks(survivors, self.embedder, self.cfg.dedup_cosine)
         top = survivors[: self.cfg.top_k]
-        return order_lost_in_middle(top)
+        ordered = order_lost_in_middle(top)
+        if getattr(self.cfg, "parent_document", False):
+            ordered = expand_to_parents(ordered)
+        return ordered
