@@ -19,12 +19,13 @@ class IngestReport:
 
 class Indexer:
     def __init__(self, embedder, store, manifest_path: str, fingerprint: str = "",
-                 chunk_kwargs: dict | None = None) -> None:
+                 chunk_kwargs: dict | None = None, ann_threshold: int = 0) -> None:
         self.embedder = embedder
         self.store = store
         self.manifest_path = manifest_path
         self.fingerprint = fingerprint
         self.chunk_kwargs = chunk_kwargs
+        self.ann_threshold = ann_threshold
 
     def _load_manifest(self) -> dict[str, str]:
         if os.path.isfile(self.manifest_path):
@@ -95,6 +96,7 @@ class Indexer:
         if all_chunks:
             self.store.upsert(all_chunks, self.embedder)
 
+        self.store.ensure_ann_index(self.ann_threshold)
         self._save_manifest(seen)
         self._write_fingerprint()
         self.store.optimize()

@@ -74,3 +74,20 @@ def test_reset_empties_table(tmp_path, emb):
     assert store.count() == 1
     store.reset()
     assert store.count() == 0
+
+
+def test_ensure_ann_index_noop_below_threshold(tmp_path, emb):
+    from raggity.models import Chunk
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    store.upsert([Chunk(text="x", source_path="a.md", title="A", heading_path="A",
+                        ordinal=0, chunk_id="c1")], emb)
+    store.ensure_ann_index(threshold=1000)   # below → must NOT raise, no index built
+    assert store.count() == 1                # still searchable
+
+
+def test_from_config_builds_lancedb(tmp_path):
+    from raggity.store import LanceDBStore
+    from raggity.config import RaggityConfig, IndexConfig
+    cfg = RaggityConfig(index=IndexConfig(path=str(tmp_path / "idx")))
+    s = LanceDBStore.from_config(cfg, 384)
+    assert s.count() == 0

@@ -45,6 +45,11 @@ class GenerationConfig(BaseModel):
 
 class IndexConfig(BaseModel):
     path: str = ".raggity/index"
+    backend: str = "lancedb"
+    ann_threshold: int = 50000
+    qdrant_location: str = ":memory:"
+    qdrant_collection: str = "raggity"
+    qdrant_api_key: str | None = None
 
 
 class RaggityConfig(BaseModel):

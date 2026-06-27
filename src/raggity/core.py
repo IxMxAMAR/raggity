@@ -9,7 +9,7 @@ from .embedder import FastEmbedEmbedder
 from .indexer import IngestReport, Indexer
 from .models import Answer
 from .retriever import Retriever
-from .store import LanceDBStore
+from .registry import resolve
 
 
 class Raggity:
@@ -26,7 +26,8 @@ class Raggity:
             self.embedder = CachedEmbedder(base, os.path.join(self.cfg.index.path, "embed_cache.json"))
         else:
             self.embedder = base
-        self.store = LanceDBStore(path=self.cfg.index.path, dim=self.embedder.dim)
+        store_cls = resolve("store", self.cfg.index.backend)
+        self.store = store_cls.from_config(self.cfg, self.embedder.dim)
         self.reranker = None
         if self.cfg.retrieval.rerank:
             from .reranker import FastEmbedReranker
@@ -56,7 +57,8 @@ class Raggity:
                         "parent_target_tokens": self.cfg.retrieval.parent_target_tokens,
                         "child_target_tokens": self.cfg.retrieval.child_target_tokens}
         indexer = Indexer(self.embedder, self.store, self._manifest_path(),
-                          fingerprint=self._fingerprint(), chunk_kwargs=chunk_kwargs)
+                          fingerprint=self._fingerprint(), chunk_kwargs=chunk_kwargs,
+                          ann_threshold=self.cfg.index.ann_threshold)
         return indexer.ingest(self.cfg.sources.include)
 
     async def _build_queries(self, question: str, expand, hyde, step_back) -> list[str]:
