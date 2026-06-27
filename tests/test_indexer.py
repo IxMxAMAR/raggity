@@ -58,6 +58,23 @@ def test_ingest_deletes_removed_source(tmp_path, emb):
     assert all("b.md" not in sp for sp in store.all_source_paths())
 
 
+def test_batched_ingest_single_upsert(tmp_path, emb, monkeypatch):
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nalpha content")
+    (notes / "b.md").write_text("# B\n\nbeta content")
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    calls = {"n": 0}
+    real_upsert = store.upsert
+    def counting_upsert(chunks, embedder):
+        calls["n"] += 1
+        return real_upsert(chunks, embedder)
+    monkeypatch.setattr(store, "upsert", counting_upsert)
+    r = Indexer(emb, store, manifest_path=str(tmp_path / "m.json")).ingest([str(notes / "*.md")])
+    assert r.added == 2
+    assert calls["n"] == 1          # one batched upsert across both files
+    assert store.count() >= 2
+
+
 def test_fingerprint_change_triggers_full_rebuild(tmp_path, emb):
     notes = tmp_path / "notes"; notes.mkdir()
     (notes / "a.md").write_text("# A\n\nalpha content")

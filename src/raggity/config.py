@@ -14,6 +14,9 @@ class SourcesConfig(BaseModel):
 class EmbeddingConfig(BaseModel):
     model: str = "BAAI/bge-small-en-v1.5"
     provider: str = "cpu"  # cpu | cuda | directml | rocm
+    batch_size: int = 256
+    parallel: int = 0
+    cache: bool = False
 
 
 class RetrievalConfig(BaseModel):
