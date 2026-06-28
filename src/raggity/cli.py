@@ -157,6 +157,58 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
 
 
 @app.command()
+def chat(config: str = typer.Option(None, "--config")):
+    """Start an interactive multi-turn chat REPL against your knowledge base."""
+    from .conversation import Conversation  # noqa: PLC0415
+    rag = _rag(config)
+    conversation = Conversation()
+    console.print("[green]raggity chat[/green] — type your question, 'exit' or Ctrl-D to quit.\n")
+    while True:
+        try:
+            question = input("You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[dim]Bye![/dim]")
+            break
+        if not question:
+            continue
+        if question.lower() in ("exit", "quit"):
+            console.print("[dim]Bye![/dim]")
+            break
+        import asyncio
+
+        async def _stream_chat():
+            # Build retrieval query from conversation history
+            retrieval_q = conversation.retrieval_query(question)
+            chunks = rag.retriever.retrieve(retrieval_q)
+            history = conversation.recent(6) or None
+            parts: list[str] = []
+            final = None
+            console.print("[cyan]raggity:[/cyan] ", end="")
+            async for piece in rag.answerer.answer_stream(question, chunks, history=history):
+                if isinstance(piece, str):
+                    print(piece, end="", flush=True)
+                    parts.append(piece)
+                else:
+                    final = piece
+            print()
+            conversation.add("user", question)
+            conversation.add("assistant", "".join(parts).strip())
+            return final
+
+        answer = asyncio.run(_stream_chat())
+        if answer is not None and answer.citations:
+            seen: set[str] = set()
+            footnotes = []
+            for c in answer.citations:
+                if c.supported and c.source_path not in seen:
+                    seen.add(c.source_path)
+                    footnotes.append(c.source_path)
+            if footnotes:
+                console.print("\n[dim]Sources: " + ", ".join(footnotes) + "[/dim]")
+        console.print()
+
+
+@app.command()
 def status(config: str = typer.Option(None, "--config")):
     """Show index statistics."""
     st = _rag(config).status()

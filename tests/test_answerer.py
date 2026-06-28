@@ -52,3 +52,54 @@ async def test_answer_stream_yields_then_answer(monkeypatch):
     items = [p async for p in ProviderAnswerer(ClaudeProvider()).answer_stream(
         "q", [_chunk("abcd1234ef", "rotated the API key on 2026-06-01")])]
     assert isinstance(items[-1], Answer) and any(isinstance(x, str) for x in items[:-1])
+
+
+async def test_answer_with_history_includes_history_in_prompt(monkeypatch):
+    """history param must be passed into build_user_prompt; prompt should contain history text."""
+    captured = {}
+
+    async def _fq(prompt, options):
+        # prompt is the string passed to query()
+        captured["user_prompt"] = prompt
+        yield _AM("The answer [doc_1#abcd1234].")
+
+    monkeypatch.setattr(llm, "query", _fq)
+    monkeypatch.setattr(llm, "AssistantMessage", _AM)
+    history = [("user", "previous question"), ("assistant", "previous answer")]
+    await ProviderAnswerer(ClaudeProvider()).answer(
+        "follow up", [_chunk("abcd1234ef", "some relevant text")], history=history)
+    assert "previous question" in captured["user_prompt"]
+    assert "CONVERSATION SO FAR" in captured["user_prompt"]
+
+
+async def test_answer_stream_with_history_includes_history_in_prompt(monkeypatch):
+    """answer_stream with history must fold history into prompt."""
+    captured = {}
+
+    async def _fq(prompt, options):
+        captured["user_prompt"] = prompt
+        yield _AM("The answer [doc_1#abcd1234].")
+
+    monkeypatch.setattr(llm, "query", _fq)
+    monkeypatch.setattr(llm, "AssistantMessage", _AM)
+    history = [("user", "what is X"), ("assistant", "X is Y")]
+    items = [p async for p in ProviderAnswerer(ClaudeProvider()).answer_stream(
+        "tell me more", [_chunk("abcd1234ef", "X is a concept")], history=history)]
+    assert "what is X" in captured["user_prompt"]
+
+
+async def test_answer_history_none_identical_to_no_history(monkeypatch):
+    """history=None must NOT alter the prompt vs no history arg."""
+    prompts_seen = []
+
+    async def _fq(prompt, options):
+        prompts_seen.append(prompt)
+        yield _AM("Some answer [doc_1#abcd1234].")
+
+    monkeypatch.setattr(llm, "query", _fq)
+    monkeypatch.setattr(llm, "AssistantMessage", _AM)
+    chunk = _chunk("abcd1234ef", "some text")
+    answerer = ProviderAnswerer(ClaudeProvider())
+    await answerer.answer("q", [chunk])
+    await answerer.answer("q", [chunk], history=None)
+    assert prompts_seen[0] == prompts_seen[1]

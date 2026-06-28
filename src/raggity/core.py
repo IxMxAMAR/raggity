@@ -5,6 +5,7 @@ import os
 
 from .answerer import ProviderAnswerer
 from .config import RaggityConfig, load_config
+from .conversation import Conversation
 from .llm import build_provider
 from .embedder import FastEmbedEmbedder
 from .indexer import IngestReport, Indexer
@@ -159,6 +160,23 @@ class Raggity:
             chunks = self.retriever.retrieve_multi(queries, question)
         async for piece in self.answerer.answer_stream(question, chunks):
             yield piece
+
+    async def achat(self, conversation: Conversation, question: str) -> Answer:
+        """Multi-turn chat: retrieve using history-aware query, answer with conversation context.
+
+        Appends the user turn and the assistant answer to *conversation* before returning.
+        """
+        retrieval_q = conversation.retrieval_query(question)
+        chunks = self.retriever.retrieve(retrieval_q)
+        history = conversation.recent(6)
+        answer = await self.answerer.answer(question, chunks, history=history or None)
+        conversation.add("user", question)
+        conversation.add("assistant", answer.text)
+        return answer
+
+    def chat(self, conversation: Conversation, question: str) -> Answer:
+        """Synchronous wrapper for :meth:`achat`."""
+        return asyncio.run(self.achat(conversation, question))
 
     def status(self) -> dict:
         return {
