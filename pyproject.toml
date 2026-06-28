@@ -8,7 +8,26 @@ version = "0.1.0"
 description = "Local-first, top-tier RAG over your notes, docs, and PDFs — answered by Claude."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "IxMxAMAR", email = "officialamrendrasingh@gmail.com" }]
+keywords = [
+  "rag", "retrieval-augmented-generation", "claude", "llm", "embeddings",
+  "vector-search", "hybrid-search", "fastembed", "lancedb", "qdrant",
+  "local-first", "cli", "semantic-search",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Text Processing :: Indexing",
+  "Environment :: Console",
+]
 dependencies = [
   "fastembed>=0.4",
   "lancedb>=0.15",
@@ -26,6 +45,11 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 server = ["fastapi>=0.110", "uvicorn>=0.29"]
 qdrant = ["qdrant-client>=1.9"]
 watch = ["watchdog>=4"]
+
+[project.urls]
+Homepage = "https://github.com/IxMxAMAR/raggity"
+Repository = "https://github.com/IxMxAMAR/raggity"
+Issues = "https://github.com/IxMxAMAR/raggity/issues"
 
 [project.scripts]
 raggity = "raggity.cli:app"

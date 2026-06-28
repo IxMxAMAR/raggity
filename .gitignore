@@ -10,3 +10,6 @@ build/
 
 # stray test logs
 test_output.txt
+
+# internal subagent-driven-development scratch
+.superpowers/
