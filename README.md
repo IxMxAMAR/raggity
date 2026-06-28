@@ -1,5 +1,10 @@
 # raggity
 
+[![CI](https://github.com/IxMxAMAR/raggity/actions/workflows/tests.yml/badge.svg)](https://github.com/IxMxAMAR/raggity/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/raggity.svg)](https://pypi.org/project/raggity/)
+[![Python](https://img.shields.io/pypi/pyversions/raggity.svg)](https://pypi.org/project/raggity/)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+
 Local-first, top-tier RAG over your notes, docs, and PDFs — answered by Claude.
 
 Hybrid retrieval (dense + BM25 + RRF), cross-encoder reranking, dedup, verified inline citations, and selective abstention: raggity only answers when it has evidence.
