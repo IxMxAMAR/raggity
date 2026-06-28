@@ -74,6 +74,11 @@ class ServerConfig(BaseModel):
     per_user: bool = False
 
 
+class ObservabilityConfig(BaseModel):
+    tracing: bool = False
+    service_name: str = "raggity"
+
+
 class RaggityConfig(BaseModel):
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
@@ -81,6 +86,7 @@ class RaggityConfig(BaseModel):
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     index: IndexConfig = Field(default_factory=IndexConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
 
 
 def _find_config_path(explicit: str | None) -> Path | None:
