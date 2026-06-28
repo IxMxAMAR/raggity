@@ -42,6 +42,8 @@ class RetrievalConfig(BaseModel):
     expand_n: int = 3
     hyde: bool = False
     step_back: bool = False
+    graph: bool = False
+    graph_hops: int = 1
 
 
 class GenerationConfig(BaseModel):
