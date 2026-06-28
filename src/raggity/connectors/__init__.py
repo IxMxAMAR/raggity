@@ -24,3 +24,5 @@ class Connector(ABC):
 # Built-in registrations (lazy — the dotted path is NOT imported here)
 # ---------------------------------------------------------------------------
 register("connector", "web", "raggity.connectors.web:WebConnector")
+register("connector", "github", "raggity.connectors.github:GitHubConnector")
+register("connector", "obsidian", "raggity.connectors.obsidian:ObsidianConnector")

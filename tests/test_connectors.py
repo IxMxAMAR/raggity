@@ -200,6 +200,149 @@ def test_config_sources_urls_parsed(tmp_path):
     assert cfg.sources.urls == ["https://example.com", "https://docs.example.com"]
 
 
+# ---------------------------------------------------------------------------
+# ObsidianConnector
+# ---------------------------------------------------------------------------
+
+def test_obsidian_reads_vault_with_wikilinks(tmp_path):
+    from raggity.connectors.obsidian import ObsidianConnector
+    (tmp_path / "note.md").write_text("# Note\n\nSee [[Other Note]] for backups.")
+    docs = ObsidianConnector(str(tmp_path)).fetch()
+    assert docs and "backups" in docs[0].text
+
+
+def test_obsidian_normalises_wikilink_to_link_text(tmp_path):
+    """[[Target]] → 'Target'; [[Target|Alias]] → 'Alias'."""
+    from raggity.connectors.obsidian import ObsidianConnector
+    (tmp_path / "note.md").write_text("See [[Other Note]] and [[Target|Alias Display]] here.")
+    docs = ObsidianConnector(str(tmp_path)).fetch()
+    assert docs
+    text = docs[0].text
+    assert "[[" not in text
+    assert "Other Note" in text
+    assert "Alias Display" in text
+    assert "Target" not in text or "Alias Display" in text  # alias replaces target
+
+
+def test_obsidian_multiple_notes(tmp_path):
+    """Each .md file becomes one Document."""
+    from raggity.connectors.obsidian import ObsidianConnector
+    (tmp_path / "a.md").write_text("# A\nfirst note")
+    (tmp_path / "b.md").write_text("# B\nsecond note")
+    docs = ObsidianConnector(str(tmp_path)).fetch()
+    assert len(docs) == 2
+
+
+def test_obsidian_document_path_is_absolute(tmp_path):
+    from raggity.connectors.obsidian import ObsidianConnector
+    (tmp_path / "note.md").write_text("content")
+    docs = ObsidianConnector(str(tmp_path)).fetch()
+    assert docs and str(tmp_path) in docs[0].path
+
+
+def test_obsidian_registry_resolves():
+    from raggity.registry import resolve
+    assert resolve("connector", "obsidian").__name__ == "ObsidianConnector"
+
+
+# ---------------------------------------------------------------------------
+# GitHubConnector
+# ---------------------------------------------------------------------------
+
+def test_github_connector_clones_and_reads(tmp_path, monkeypatch):
+    import raggity.connectors.github as g
+    def fake_clone(url, dest):
+        from pathlib import Path
+        (Path(dest) / "README.md").write_text("# Repo\n\nproject docs here")
+    monkeypatch.setattr(g, "_clone", fake_clone)
+    docs = g.GitHubConnector("https://github.com/x/y").fetch()
+    assert any("project docs" in d.text for d in docs)
+
+
+def test_github_connector_doc_path_contains_url(tmp_path, monkeypatch):
+    import raggity.connectors.github as g
+    def fake_clone(url, dest):
+        from pathlib import Path
+        (Path(dest) / "README.md").write_text("content")
+    monkeypatch.setattr(g, "_clone", fake_clone)
+    docs = g.GitHubConnector("https://github.com/x/y").fetch()
+    assert docs and docs[0].path.startswith("https://github.com/x/y#")
+
+
+def test_github_connector_skips_unsupported_files(tmp_path, monkeypatch):
+    """Binary/unknown extension files are ignored."""
+    import raggity.connectors.github as g
+    def fake_clone(url, dest):
+        from pathlib import Path
+        (Path(dest) / "README.md").write_text("text file")
+        (Path(dest) / "binary.bin").write_bytes(b"\x00\x01\x02")
+    monkeypatch.setattr(g, "_clone", fake_clone)
+    docs = g.GitHubConnector("https://github.com/x/y").fetch()
+    paths = [d.path for d in docs]
+    assert any("README.md" in p for p in paths)
+    assert not any(".bin" in p for p in paths)
+
+
+def test_github_registry_resolves():
+    from raggity.registry import resolve
+    assert resolve("connector", "github").__name__ == "GitHubConnector"
+
+
+# ---------------------------------------------------------------------------
+# CLI ingest-repo and ingest-obsidian
+# ---------------------------------------------------------------------------
+
+def test_cli_ingest_repo(tmp_path, monkeypatch):
+    """rag ingest-repo <url> clones and indexes the repo."""
+    import raggity.connectors.github as g
+    import raggity.cli as cli_mod
+    from typer.testing import CliRunner
+
+    def fake_clone(url, dest):
+        from pathlib import Path
+        (Path(dest) / "README.md").write_text("repo readme content")
+
+    monkeypatch.setattr(g, "_clone", fake_clone)
+
+    cfg = tmp_path / "raggity.toml"
+    cfg.write_text(
+        f'[sources]\ninclude = []\n'
+        f'[index]\npath = "{(tmp_path / "idx").as_posix()}"\n'
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli_mod.app, [
+        "ingest-repo", "https://github.com/x/y", "--config", str(cfg)
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Ingested" in result.output
+
+
+def test_cli_ingest_obsidian(tmp_path):
+    """rag ingest-obsidian <vault> reads notes and indexes them."""
+    import raggity.cli as cli_mod
+    from typer.testing import CliRunner
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "note.md").write_text("# Note\n\nSome content here.")
+
+    cfg = tmp_path / "raggity.toml"
+    cfg.write_text(
+        f'[sources]\ninclude = []\n'
+        f'[index]\npath = "{(tmp_path / "idx").as_posix()}"\n'
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli_mod.app, [
+        "ingest-obsidian", str(vault), "--config", str(cfg)
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Ingested" in result.output
+
+
+# ---------------------------------------------------------------------------
+
 def test_ingest_calls_web_connector_for_urls(tmp_path, monkeypatch):
     """Raggity.ingest() fetches each sources.urls entry via WebConnector."""
     import raggity.connectors.web as w

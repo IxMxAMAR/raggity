@@ -1,5 +1,7 @@
 [sources]
 include = ["~/notes/**/*.md", "~/docs/**/*.pdf"]
+# URLs fetched automatically on every `rag ingest` (requires: pip install raggity[web]):
+# urls = ["https://docs.example.com/overview"]
 
 [embedding]
 model = "BAAI/bge-small-en-v1.5"
