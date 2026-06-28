@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/IxMxAMAR/raggity/security/advisories/new
+    about: Please report security vulnerabilities via GitHub's private advisory feature or by email (see SECURITY.md).
+  - name: Question / discussion
+    url: https://github.com/IxMxAMAR/raggity/discussions
+    about: For questions, use GitHub Discussions rather than opening an issue.
