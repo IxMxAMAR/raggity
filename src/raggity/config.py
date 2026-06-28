@@ -65,12 +65,19 @@ class IndexConfig(BaseModel):
     qdrant_api_key: str | None = None
 
 
+class ServerConfig(BaseModel):
+    auth: str = "none"  # "none" | "api_key"
+    api_keys: list[str] = Field(default_factory=list)
+    max_sessions: int = 1000
+
+
 class RaggityConfig(BaseModel):
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     index: IndexConfig = Field(default_factory=IndexConfig)
+    server: ServerConfig = Field(default_factory=ServerConfig)
 
 
 def _find_config_path(explicit: str | None) -> Path | None:
