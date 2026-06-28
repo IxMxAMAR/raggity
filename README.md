@@ -290,7 +290,7 @@ Sources → Chunker → Embedder → LanceDB
                                           |
                                     Dedup (cosine >= 0.92)
                                           |
-                                    Relevance floor filter
+                                Optional rerank-score filter
                                           |
                                     Lost-in-the-middle reorder
                                           |
@@ -301,16 +301,16 @@ Sources → Chunker → Embedder → LanceDB
 - **Hybrid retrieval**: dense vector search + BM25 full-text search, fused with Reciprocal Rank Fusion (RRF, k=60).
 - **Cross-encoder reranking**: enabled by default (`rerank = true`). Uses a local ONNX cross-encoder to re-score candidate chunks against the query before selection.
 - **Deduplication**: chunks with cosine similarity >= `dedup_cosine` (default 0.92) are collapsed.
-- **Relevance floor**: when `rerank = true`, chunks whose sigmoid-normalised cross-encoder score falls below `relevance_floor` are dropped before generation. The floor is **not applied** when `rerank = false` — abstention then triggers only when retrieval returns no candidates at all.
+- **Selective abstention**: raggity abstains ("I don't have enough information") when the top dense cosine similarity falls below `sufficiency_floor` (default 0.5) or retrieval returns no candidates. This is keyed on the dense signal, not the cross-encoder score.
+- **Optional rerank-score filter**: `relevance_floor` (default 0.0, off) is a secondary filter on the sigmoid-normalised cross-encoder rerank score. When set above 0.0, low-scoring chunks are dropped for ordering/trimming. It does not itself trigger abstention.
 - **Lost-in-the-middle reorder**: top chunks are placed at the start and end of the context window where LLMs attend best.
-- **Selective abstention**: if no chunk clears the relevance floor, raggity returns a canned "I don't have enough information" message without calling the API.
 - **Verified citations**: inline citation markers in the answer are cross-checked against the retrieved chunks; only markers that match a real retrieved source are preserved.
 
 ---
 
 ## Tuning
 
-`relevance_floor` is the main knob. When `rerank = true` (default), cross-encoder logits are sigmoid-normalised to (0, 1) before comparison; the default 0.3 is a good starting point. When `rerank = false`, the floor is not applied at all — candidates pass straight to dedup and top-k selection regardless of their score.
+`sufficiency_floor` (default 0.5) is the primary abstention knob — it gates on the top dense cosine similarity among retrieved candidates. Lower it to answer more questions; raise it to be more conservative. `relevance_floor` (default 0.0, off) is an optional secondary filter on the sigmoid-normalised cross-encoder rerank score; it trims the candidate list for ordering purposes but does not itself trigger abstention.
 
 Other useful knobs in `[retrieval]`:
 

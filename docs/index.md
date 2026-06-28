@@ -38,7 +38,7 @@ Sources → Chunker → Embedder → LanceDB / Qdrant
                                                |
                                          Dedup (cosine ≥ 0.92)
                                                |
-                                       Relevance floor filter
+                                  Optional rerank-score filter
                                                |
                                   Lost-in-the-middle reorder
                                                |

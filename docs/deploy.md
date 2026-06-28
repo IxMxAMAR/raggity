@@ -121,7 +121,7 @@ In Docker Compose, you can add a collector as an additional service and set the 
 
 raggity's own CI uses GitHub Actions:
 
-- **Tests** — `.github/workflows/tests.yml` — runs the full test suite on Python 3.11, 3.12, 3.13 on every push and PR.
+- **Tests** — `.github/workflows/tests.yml` — runs the full test suite on Python 3.11 and 3.12 on every push and PR.
 - **Publish** — `.github/workflows/publish.yml` — publishes to PyPI via OIDC Trusted Publishing on GitHub Release.
 - **Docker** — `.github/workflows/docker.yml` — builds and pushes the GHCR image on Release.
 - **Docs** — `.github/workflows/docs.yml` — builds and deploys this documentation site to GitHub Pages on every push to `main`.

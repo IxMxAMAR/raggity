@@ -29,22 +29,23 @@ urls = ["https://docs.example.com/overview"]
 
 ```toml
 [index]
-path = "~/.raggity/index"
+path = ".raggity/index"       # relative to the current working directory
 backend = "lancedb"           # or "qdrant"
 ann_threshold = 50000         # build ANN index once chunk count exceeds this
 
 # Qdrant-specific (only when backend = "qdrant")
-qdrant_location = "http://localhost:6333"
+# qdrant_location = ":memory:"             # default — ephemeral in-memory
+# qdrant_location = "http://localhost:6333" # served Qdrant instance
 qdrant_collection = "raggity"
 # qdrant_api_key = "..."      # or set QDRANT_API_KEY env var
 ```
 
 | Key | Default | Description |
 |---|---|---|
-| `path` | `~/.raggity/index` | Directory for LanceDB data and caches |
+| `path` | `".raggity/index"` | Directory for LanceDB data and caches (relative to cwd) |
 | `backend` | `"lancedb"` | Vector store backend: `"lancedb"` or `"qdrant"` |
 | `ann_threshold` | `50000` | Chunk count above which ANN index is built automatically |
-| `qdrant_location` | `"http://localhost:6333"` | Qdrant server URL, `:memory:`, or local path |
+| `qdrant_location` | `":memory:"` | Qdrant location: `":memory:"` (default, ephemeral in-process), `"http://localhost:6333"` (served instance), or a local path |
 | `qdrant_collection` | `"raggity"` | Qdrant collection name |
 | `qdrant_api_key` | `""` | Qdrant API key (or set `QDRANT_API_KEY`) |
 
@@ -101,7 +102,9 @@ candidates = 30
 top_k = 5
 rerank = true
 rerank_model = "Xenova/ms-marco-MiniLM-L-6-v2"
-relevance_floor = 0.3
+sufficiency_floor = 0.5   # dense-cosine threshold — governs abstention
+relevance_floor = 0.0     # optional rerank-score filter (0.0 = off)
+hybrid = true
 dedup_cosine = 0.92
 rrf_k = 60
 parent_document = false
@@ -118,7 +121,9 @@ graph_hops = 1
 | `top_k` | `5` | Chunks passed to the LLM after all filtering |
 | `rerank` | `true` | Enable cross-encoder reranking |
 | `rerank_model` | `"Xenova/ms-marco-MiniLM-L-6-v2"` | ONNX cross-encoder model |
-| `relevance_floor` | `0.3` | Sigmoid-normalised cross-encoder score threshold for abstention |
+| `sufficiency_floor` | `0.5` | Dense-cosine similarity threshold below which raggity abstains ("I don't have enough information") |
+| `relevance_floor` | `0.0` | Optional secondary filter on the sigmoid-normalised cross-encoder rerank score (0.0 = off); does not trigger abstention |
+| `hybrid` | `true` | Enable hybrid (dense + BM25) retrieval |
 | `dedup_cosine` | `0.92` | Cosine similarity threshold for chunk deduplication |
 | `rrf_k` | `60` | RRF fusion constant (higher = flatter curve) |
 | `parent_document` | `false` | Expand matched chunks to parent documents |
@@ -164,6 +169,7 @@ cache = false
 | `model` | `"claude-opus-4-8"` | Model name (backend-specific) |
 | `auth` | `"auto"` | Claude auth mode: `"auto"`, `"subscription"`, or `"api_key"` |
 | `cache` | `false` | Semantic answer cache (keyed on question + chunks + model) |
+| `temperature` | `null` | Generation temperature passed to the model (null = use model default) |
 | `base_url` | varies | OpenAI-compatible base URL |
 | `api_key_env` | `"OPENAI_API_KEY"` | Env var name holding the API key (OpenAI/Ollama backends) |
 

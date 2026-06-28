@@ -16,7 +16,7 @@ Query
                                        │
                                  Dedup (cosine ≥ 0.92)
                                        │
-                                 Relevance floor filter
+                          Optional rerank-score filter
                                        │
                              Lost-in-the-middle reorder
                                        │
@@ -68,16 +68,18 @@ dedup_cosine = 0.92
 
 ## Selective abstention
 
-When `rerank = true`, raggity computes a sigmoid-normalised cross-encoder score for each chunk. Chunks below `relevance_floor` are **dropped before generation**. If no chunks remain, raggity returns a canned "I don't have enough information" message without calling the LLM.
-
-When `rerank = false`, the floor is **not applied** — abstention triggers only when retrieval returns no candidates at all.
+raggity abstains — returning "I don't have enough information" without calling the LLM — when the **top dense cosine similarity** among retrieved candidates falls below `sufficiency_floor` (default 0.5), or when retrieval returns no candidates at all.
 
 ```toml
 [retrieval]
-relevance_floor = 0.3   # sigmoid-normalised score; default 0.3 is a good starting point
+sufficiency_floor = 0.5   # dense-cosine similarity threshold; below this, raggity abstains
 ```
 
-`relevance_floor` is the main tuning knob. Lower it to answer more questions at the risk of lower precision; raise it to be more conservative.
+`sufficiency_floor` is the primary abstention knob. Lower it to answer more questions (at the risk of lower precision); raise it to be more conservative.
+
+The **cross-encoder reranker** affects **ordering only** — its absolute score does not govern abstention. ms-marco cross-encoders produce near-zero absolute scores even for correct matches on casual phrasings, making the raw score an unreliable abstention signal.
+
+`relevance_floor` is an **optional secondary filter** on the sigmoid-normalised cross-encoder rerank score, **default 0.0 (off)**. When set above 0.0, chunks whose sigmoid-normalised rerank score falls below the threshold are dropped for ordering/trimming purposes. It does **not** itself trigger abstention if it empties the candidate list — only `sufficiency_floor` abstains.
 
 ---
 
@@ -230,7 +232,9 @@ rag ask "..." --no-cache
 | `candidates` | `30` | Chunks fetched from each retriever before fusion |
 | `top_k` | `5` | Chunks passed to the LLM after all filtering |
 | `rerank` | `true` | Enable cross-encoder reranking |
-| `relevance_floor` | `0.3` | Main abstention knob (sigmoid-normalised score) |
+| `sufficiency_floor` | `0.5` | Dense-cosine similarity threshold below which raggity abstains |
+| `relevance_floor` | `0.0` | Optional secondary filter on the sigmoid-normalised cross-encoder rerank score (0.0 = off); does not trigger abstention |
+| `hybrid` | `true` | Enable hybrid (dense + BM25) retrieval |
 | `dedup_cosine` | `0.92` | Cosine threshold for dedup collapse |
 | `rrf_k` | `60` | RRF constant |
 | `parent_document` | `false` | Expand matched chunks to parent documents |

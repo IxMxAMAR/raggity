@@ -19,7 +19,7 @@ I built raggity (https://github.com/IxMxAMAR/raggity), a local-first RAG engine 
 
 - **No API key required by default.** raggity uses the Claude Agent SDK, so if you have a Claude subscription (`claude login`), you're already good. API key, OpenAI-compatible endpoints, and offline Ollama are all supported too.
 - **CPU-first, torch-free, cross-vendor.** Embeddings and reranking run on ONNX Runtime — no CUDA setup, no GPU needed. Works on AMD, NVIDIA, and no-GPU machines equally. Works on macOS, Linux, and Windows.
-- **Batteries-included retrieval pipeline.** Hybrid dense+BM25 fusion (RRF), cross-encoder reranking, deduplication, parent-document expansion, lost-in-the-middle reorder, and a relevance floor that triggers abstention when nothing is confident enough.
+- **Batteries-included retrieval pipeline.** Hybrid dense+BM25 fusion (RRF), cross-encoder reranking, deduplication, parent-document expansion, lost-in-the-middle reorder, and `sufficiency_floor` — a dense-cosine similarity threshold that triggers abstention when the top retrieved document isn't relevant enough.
 - **Verified inline citations.** Every answer lists which source chunks it drew from. The citation markers are cross-checked against retrieved chunks — hallucinated source numbers are dropped.
 - **Local-first.** LanceDB (no server needed) by default. Switch to Qdrant for multi-user/large-scale.
 - **Multi-format ingest.** Markdown, PDF, DOCX, PPTX, HTML, CSV, images (OCR), web URLs, Git repos, Obsidian vaults — one `rag ingest` covers them all.
@@ -79,8 +79,8 @@ rag ask "How do I configure X?"
 **Retrieval pipeline (simplified):**
 
 ```
-Query → dense + BM25 → RRF fusion → cross-encoder rerank
-      → relevance floor → abstain OR send to Claude with verified citations
+Query → dense + BM25 → RRF fusion → sufficiency_floor check (dense cosine)
+      → abstain if below 0.5 OR cross-encoder rerank → send to Claude with verified citations
 ```
 
 **Supported sources:** Markdown, PDF (text + OCR fallback), DOCX, PPTX, HTML, CSV, images, web URLs (with crawl), Git repos, Obsidian vaults.
@@ -112,12 +112,12 @@ rag ingest && rag ask "…"
 **Tweet 2:**
 Why build another RAG tool?
 
-Most tools either:
+Most tools:
 • require an API key + dollars per query
 • hallucinate citations
-• fail gracefully when they have no evidence
+• make up confident answers when they have no evidence
 
-raggity does none of those things.
+raggity does none of those things — it abstains ("I don't have enough information") via `sufficiency_floor`, a dense-cosine similarity threshold, rather than hallucinating.
 
 ---
 
@@ -146,9 +146,8 @@ AMD? Works (DirectML / ROCm). NVIDIA? Works. No GPU at all? Works.
 Retrieval pipeline:
 
 dense vector search + BM25 full-text → RRF fusion
-→ cross-encoder rerank
-→ relevance floor (sigmoid-normalised score)
-→ if nothing clears the floor: "I don't have enough information"
+→ sufficiency_floor check (dense cosine similarity)
+→ abstain if top doc is below 0.5, otherwise: cross-encoder rerank → Claude
 
 No false confidence. Abstention is a first-class citizen.
 

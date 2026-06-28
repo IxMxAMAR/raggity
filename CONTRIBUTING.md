@@ -41,10 +41,10 @@ python -m pytest -k "test_ask" -q
 
 ## PR process
 
-1. Fork the repo and create a branch from `master`.
+1. Fork the repo and create a branch from `main`.
 2. Make your changes; add or update tests as needed.
 3. Ensure `python -m pytest -q` passes with 0 failures and 0 warnings.
-4. Open a pull request against `master`. Fill in the PR template.
+4. Open a pull request against `main`. Fill in the PR template.
 5. A maintainer will review and merge.
 
 For large changes, open an issue first to discuss the design.
