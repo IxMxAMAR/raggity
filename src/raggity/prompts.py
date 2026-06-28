@@ -33,8 +33,17 @@ def format_context(chunks: list[Chunk]) -> str:
     return "\n\n".join(blocks)
 
 
-def build_user_prompt(question: str, chunks: list[Chunk]) -> str:
+def build_user_prompt(
+    question: str,
+    chunks: list[Chunk],
+    history: list[tuple[str, str]] | None = None,
+) -> str:
+    prefix = ""
+    if history:
+        lines = "\n".join(f"{role}: {text}" for role, text in history)
+        prefix = f"CONVERSATION SO FAR:\n{lines}\n\n"
     return (
+        f"{prefix}"
         f"CONTEXT:\n{format_context(chunks)}\n\n"
         f"QUESTION: {question}\n\n"
         "Answer with inline citations using the bracket tags above."

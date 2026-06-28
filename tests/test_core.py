@@ -138,3 +138,36 @@ def test_aask_decompose_merges_and_answers(tmp_path, monkeypatch):
     import asyncio
     ans = asyncio.run(rag.aask_decompose("how are backups done?"))
     assert "NAS" in ans.text
+
+
+def test_core_chat_two_turns_appends_conversation(tmp_path, monkeypatch):
+    """2-turn chat: conversation accumulates 4 turns (user+assistant×2)."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+    )
+
+    async def _fake_query(prompt, options):
+        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    from raggity.core import Raggity
+    from raggity.conversation import Conversation
+
+    rag = Raggity(cfg)
+    rag.ingest()
+    conv = Conversation()
+
+    ans1 = rag.chat(conv, "how are backups done?")
+    assert "NAS" in ans1.text
+    assert len(conv.turns) == 2
+
+    ans2 = rag.chat(conv, "where exactly?")
+    assert "NAS" in ans2.text
+    assert len(conv.turns) == 4
+    assert conv.turns[0] == ("user", "how are backups done?")
+    assert conv.turns[2] == ("user", "where exactly?")
