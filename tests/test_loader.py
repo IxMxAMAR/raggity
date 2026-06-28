@@ -50,3 +50,26 @@ def test_document_path_is_posix(tmp_path):
     assert "\\" not in docs[0].path, (
         f"Document.path should be POSIX (no backslashes), got: {docs[0].path!r}"
     )
+
+
+def test_mixed_md_and_docx_folder(tmp_path):
+    """A folder with .md and .docx files loads both document types."""
+    import docx as _docx
+
+    # Write a markdown file
+    (tmp_path / "notes.md").write_text("# Meeting Notes\nDecision: ship it.")
+
+    # Write a docx file
+    d = _docx.Document()
+    d.add_paragraph("Contract text here")
+    d.save(tmp_path / "contract.docx")
+
+    docs = load_documents([str(tmp_path / "*.md"), str(tmp_path / "*.docx")])
+    filenames = {d.path.rsplit("/", 1)[-1] for d in docs}
+
+    assert "notes.md" in filenames, "markdown file not loaded"
+    assert "contract.docx" in filenames, "docx file not loaded"
+
+    texts = {d.path.rsplit("/", 1)[-1]: d.text for d in docs}
+    assert "Decision: ship it." in texts["notes.md"]
+    assert "Contract text" in texts["contract.docx"]
