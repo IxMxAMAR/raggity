@@ -48,6 +48,57 @@ If you prefer to use an API key instead:
 
 ---
 
+## Generation backends
+
+raggity supports three generation backends, controlled by `generation.backend` in `raggity.toml`.
+
+### Claude (default)
+
+Uses the Claude Agent SDK. No extra dependencies. Requires a Claude subscription or API key (see [Auth](#auth) above).
+
+```toml
+[generation]
+backend = "claude"
+model = "claude-opus-4-8"
+auth = "auto"
+```
+
+### OpenAI-compatible
+
+Any OpenAI-compatible API endpoint (OpenAI, Azure OpenAI, Together, Groq, etc.). Requires the `openai` extra:
+
+```bash
+pip install raggity[openai]
+```
+
+```toml
+[generation]
+backend = "openai"
+model = "gpt-4o-mini"
+base_url = "https://api.openai.com/v1"   # default; any OpenAI-compatible URL works
+api_key_env = "OPENAI_API_KEY"           # env var name holding the API key
+```
+
+### Ollama (offline)
+
+Runs against a local [Ollama](https://ollama.com) server — no API key required. Requires the `openai` extra (reuses the OpenAI client):
+
+```bash
+pip install raggity[openai]
+ollama pull llama3.1
+```
+
+```toml
+[generation]
+backend = "ollama"
+model = "llama3.1"
+# base_url defaults to http://localhost:11434/v1 — omit unless Ollama is on a different port
+```
+
+The `auth` field is ignored for `openai` and `ollama` backends.
+
+---
+
 ## Quickstart
 
 ```bash
