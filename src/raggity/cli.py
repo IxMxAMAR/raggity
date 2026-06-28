@@ -53,6 +53,51 @@ def ingest_url(
     console.print(f"[green]Ingested {added} page(s) from {url}.[/green]")
 
 
+@app.command(name="ingest-repo")
+def ingest_repo(
+    url: str = typer.Argument(..., help="Git repository URL to clone and index."),
+    ref: str = typer.Option(None, "--ref", "-r", help="Branch or tag to check out (default: HEAD)."),
+    config: str = typer.Option(None, "--config"),
+):
+    """Shallow-clone a git repository and add all text files to the index."""
+    from .connectors.github import GitHubConnector  # noqa: PLC0415
+    rag = _rag(config)
+    console.print(f"Cloning [cyan]{url}[/cyan]" + (f" @ {ref}" if ref else "") + "…")
+    try:
+        connector = GitHubConnector(url, ref=ref)
+        docs = connector.fetch()
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    if not docs:
+        console.print("[yellow]No text files found in repository.[/yellow]")
+        raise typer.Exit(0)
+    added = rag.ingest_documents(docs)
+    console.print(f"[green]Ingested {added} file(s) from {url}.[/green]")
+
+
+@app.command(name="ingest-obsidian")
+def ingest_obsidian(
+    vault: str = typer.Argument(..., help="Path to the Obsidian vault directory."),
+    config: str = typer.Option(None, "--config"),
+):
+    """Read all Markdown notes from an Obsidian vault and add them to the index."""
+    from .connectors.obsidian import ObsidianConnector  # noqa: PLC0415
+    rag = _rag(config)
+    console.print(f"Reading vault [cyan]{vault}[/cyan]…")
+    try:
+        connector = ObsidianConnector(vault)
+        docs = connector.fetch()
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    if not docs:
+        console.print("[yellow]No Markdown notes found in vault.[/yellow]")
+        raise typer.Exit(0)
+    added = rag.ingest_documents(docs)
+    console.print(f"[green]Ingested {added} note(s) from {vault}.[/green]")
+
+
 @app.command()
 def ask(question: str, config: str = typer.Option(None, "--config"),
         plain: bool = typer.Option(False, "--plain"),

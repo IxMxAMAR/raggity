@@ -130,6 +130,9 @@ Both `rag` and `raggity` are registered as console scripts — they are identica
 | Command | Description |
 |---|---|
 | `rag ingest` | Incrementally index configured sources (hash-based, only processes changes) |
+| `rag ingest-url <url>` | Fetch a web URL (and optionally crawl same-domain links) and add to the index |
+| `rag ingest-repo <url>` | Shallow-clone a git repository and index all text files in it |
+| `rag ingest-obsidian <vault>` | Read all Markdown notes from an Obsidian vault and add to the index |
 | `rag ask "..."` | Ask a question; prints the answer with verified source footnotes |
 | `rag ask "..." --plain` | Pipe-friendly output — no Rich formatting, no footnotes |
 | `rag ask "..." --hyde` | HyDE query transform — generate a hypothetical passage to improve dense recall |
@@ -143,6 +146,100 @@ Both `rag` and `raggity` are registered as console scripts — they are identica
 | `rag watch` | Watch source folders and re-index automatically on file changes (Ctrl-C to stop) |
 
 All commands accept `--config PATH` to point at a non-default config file.
+
+---
+
+## Supported file types
+
+raggity reads the following file types out of the box:
+
+| Extension | Notes |
+|---|---|
+| `.md` | Markdown |
+| `.txt` | Plain text |
+| `.pdf` | Embedded text extraction via pypdf; falls back to OCR when text is absent |
+| `.docx` | Requires `raggity[docs]` |
+| `.html` | Requires `raggity[docs]` |
+| `.csv` | Parsed as key: value rows |
+| `.pptx` | Requires `raggity[docs]` |
+| `.png`, `.jpg`, `.jpeg`, `.tiff`, `.bmp`, `.webp` | OCR via RapidOCR — requires `raggity[ocr]` |
+
+### Document extras
+
+Install optional readers with the `docs` extra:
+
+```bash
+pip install raggity[docs]
+```
+
+This adds support for `.docx`, `.html`, and `.pptx` files.
+
+### OCR extra
+
+For scanned PDFs and image files, install the `ocr` extra:
+
+```bash
+pip install raggity[ocr]
+```
+
+This adds RapidOCR + pypdfium2.  raggity will automatically OCR a PDF page when embedded text is absent.
+
+---
+
+## Connectors
+
+Connectors let you ingest content from external sources beyond your local file system.
+
+### Web (`rag ingest-url`)
+
+Requires the `web` extra:
+
+```bash
+pip install raggity[web]
+```
+
+```bash
+# Fetch a single page
+rag ingest-url https://docs.example.com/overview
+
+# BFS-crawl same-domain links up to 2 hops deep
+rag ingest-url https://docs.example.com --depth 2
+```
+
+You can also configure URLs for automatic ingestion on every `rag ingest` run:
+
+```toml
+[sources]
+urls = ["https://docs.example.com/overview", "https://example.com/changelog"]
+```
+
+### GitHub / Git repo (`rag ingest-repo`)
+
+No extra install needed — uses stdlib subprocess + your local `git`.
+
+```bash
+# Index the default branch of a GitHub repo
+rag ingest-repo https://github.com/owner/repo
+
+# Pin to a specific branch or tag
+rag ingest-repo https://github.com/owner/repo --ref main
+```
+
+All text files with supported extensions are read and indexed.  The index
+`path` for each document is ``<repo_url>#<relpath>`` so you can trace sources
+back to the repository.
+
+### Obsidian vault (`rag ingest-obsidian`)
+
+No extra install needed.
+
+```bash
+rag ingest-obsidian ~/Documents/MyVault
+```
+
+raggity walks all `.md` files in the vault recursively and normalises
+``[[wikilink]]`` / ``[[link|alias]]`` syntax to plain text before indexing,
+so bracket noise does not pollute your chunks.
 
 ---
 
