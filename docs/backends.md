@@ -88,7 +88,7 @@ LanceDB is the default and requires **no extra install**. Data is stored locally
 ```toml
 [index]
 backend = "lancedb"
-path = "~/.raggity/index"
+path = ".raggity/index"   # relative to cwd (default)
 ```
 
 **Recommended for:** single-user local deployments.
