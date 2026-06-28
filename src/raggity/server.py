@@ -47,28 +47,46 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
         # Use OrderedDict for bounded LRU session store
         state["sessions"]: OrderedDict[str, Conversation] = OrderedDict()
         state["allowed_keys"] = _resolve_keys()
+        # Per-user Raggity cache: ns -> Raggity (created lazily, cached for reuse)
+        state["user_rags"]: dict[str, Raggity] = {}
         yield
         state.clear()
 
     app = FastAPI(title="raggity", lifespan=lifespan)
 
     # --- Auth dependency ---
-    async def require_auth(request: Request) -> None:
+    # Returns the matched API key string (identity), or None when auth="none".
+    async def require_auth(request: Request) -> str | None:
         if cfg.server.auth == "none":
-            return
+            return None
         # auth == "api_key"
         allowed: frozenset[str] = state["allowed_keys"]
         # Check X-API-Key header
         key = request.headers.get("X-API-Key")
         if key and key in allowed:
-            return
+            return key
         # Check Authorization: Bearer <key>
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             bearer_key = auth_header[len("Bearer "):]
             if bearer_key in allowed:
-                return
+                return bearer_key
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    def _resolve_rag(identity: str | None) -> Raggity:
+        """Return the Raggity instance for this request.
+
+        When ``cfg.server.per_user`` is True and auth is api_key, each identity
+        gets its own namespaced :class:`Raggity` (cached for reuse).  Otherwise
+        the single shared base instance is returned.
+        """
+        if not cfg.server.per_user or identity is None:
+            return state["rag"]
+        user_rags: dict[str, Raggity] = state["user_rags"]
+        if identity not in user_rags:
+            base_rag: Raggity = state["rag"]
+            user_rags[identity] = base_rag.for_namespace(identity)
+        return user_rags[identity]
 
     def _get_or_create_session(session_id: str) -> Conversation:
         sessions: OrderedDict[str, Conversation] = state["sessions"]
@@ -82,20 +100,20 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
                 sessions.popitem(last=False)
         return sessions[session_id]
 
-    @app.post("/ingest", dependencies=[Depends(require_auth)])
-    async def ingest():
-        rag: Raggity = state["rag"]
+    @app.post("/ingest")
+    async def ingest(identity: str | None = Depends(require_auth)):
+        rag: Raggity = _resolve_rag(identity)
         report = await run_in_threadpool(rag.ingest)
         return {"added": report.added, "updated": report.updated,
                 "deleted": report.deleted, "unchanged": report.unchanged}
 
-    @app.get("/status", dependencies=[Depends(require_auth)])
-    async def status():
-        return state["rag"].status()
+    @app.get("/status")
+    async def status(identity: str | None = Depends(require_auth)):
+        return _resolve_rag(identity).status()
 
-    @app.post("/ask", dependencies=[Depends(require_auth)])
-    async def ask(req: AskRequest):
-        rag: Raggity = state["rag"]
+    @app.post("/ask")
+    async def ask(req: AskRequest, identity: str | None = Depends(require_auth)):
+        rag: Raggity = _resolve_rag(identity)
         if req.session_id is not None:
             conv = _get_or_create_session(req.session_id)
             answer = await rag.achat(conv, req.question)
@@ -120,9 +138,9 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
             ],
         }
 
-    @app.post("/chat", dependencies=[Depends(require_auth)])
-    async def chat(req: ChatRequest):
-        rag: Raggity = state["rag"]
+    @app.post("/chat")
+    async def chat(req: ChatRequest, identity: str | None = Depends(require_auth)):
+        rag: Raggity = _resolve_rag(identity)
         session_id = req.session_id if req.session_id is not None else uuid.uuid4().hex
         conv = _get_or_create_session(session_id)
         answer = await rag.achat(conv, req.question)
@@ -137,16 +155,17 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
             "session_id": session_id,
         }
 
-    @app.delete("/session/{session_id}", status_code=204, dependencies=[Depends(require_auth)])
-    async def delete_session(session_id: str):
+    @app.delete("/session/{session_id}", status_code=204)
+    async def delete_session(session_id: str, identity: str | None = Depends(require_auth)):
         sessions: OrderedDict[str, Conversation] = state["sessions"]
         if session_id not in sessions:
             raise HTTPException(status_code=404, detail="session not found")
         del sessions[session_id]
 
-    @app.get("/ask/stream", dependencies=[Depends(require_auth)])
-    async def ask_stream(question: str, session_id: str | None = None):
-        rag: Raggity = state["rag"]
+    @app.get("/ask/stream")
+    async def ask_stream(question: str, session_id: str | None = None,
+                         identity: str | None = Depends(require_auth)):
+        rag: Raggity = _resolve_rag(identity)
 
         async def _event_stream() -> AsyncIterator[str]:
             from .models import Answer  # noqa: PLC0415
