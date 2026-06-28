@@ -47,6 +47,10 @@ class GenerationConfig(BaseModel):
     auth: str = "auto"  # auto | subscription | api_key
     model: str = "claude-opus-4-8"
     cache: bool = False
+    backend: str = "claude"
+    base_url: str | None = None
+    api_key_env: str = "OPENAI_API_KEY"
+    temperature: float | None = None
 
 
 class IndexConfig(BaseModel):
