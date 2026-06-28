@@ -28,6 +28,7 @@ theme:
 
 nav:
   - Overview: index.md
+  - Demo: demo.md
   - Installation: install.md
   - Quickstart: quickstart.md
   - Configuration: configuration.md

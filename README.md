@@ -11,6 +11,14 @@ Hybrid retrieval (dense + BM25 + RRF), cross-encoder reranking, dedup, verified 
 
 ---
 
+## Demo
+
+![raggity demo](docs/demo.gif)
+
+> The GIF is generated via `vhs demo.tape` (requires [VHS](https://github.com/charmbracelet/vhs)). See [docs/demo.md](docs/demo.md) for regeneration instructions.
+
+---
+
 ## Install
 
 ```bash
