@@ -121,3 +121,54 @@ def test_ask_decompose_overrides_other_transforms(tmp_path, monkeypatch):
     assert "NAS" in r.stdout
     # override note goes to stderr; typer.testing captures both in output
     assert "overrides" in r.output
+
+
+def test_graph_build_exits_1_when_graph_off(tmp_path):
+    """graph-build fails with exit code 1 when retrieval.graph=false (default)."""
+    cfg = _make_config(tmp_path)
+    runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
+    r = runner.invoke(cli_mod.app, ["graph-build", "--config", cfg])
+    assert r.exit_code == 1
+    assert "graph" in r.output.lower()
+
+
+def test_graph_build_exits_1_when_empty_index(tmp_path):
+    """graph-build exits 1 with helpful message when index has no chunks."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    cfg_path = tmp_path / "raggity.toml"
+    cfg_path.write_text(
+        f'[sources]\ninclude = ["{(notes / "*.md").as_posix()}"]\n'
+        f'[index]\npath = "{(tmp_path / "idx").as_posix()}"\n'
+        f'[retrieval]\ngraph = true\n'
+    )
+    r = runner.invoke(cli_mod.app, ["graph-build", "--config", str(cfg_path)])
+    assert r.exit_code == 1
+    assert "empty" in r.output.lower() or "ingest" in r.output.lower()
+
+
+def test_graph_build_succeeds(tmp_path, monkeypatch):
+    """graph-build runs successfully with mocked LLM and prints 'Graph built.'"""
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg_path = tmp_path / "raggity.toml"
+    cfg_path.write_text(
+        f'[sources]\ninclude = ["{(notes / "*.md").as_posix()}"]\n'
+        f'[index]\npath = "{(tmp_path / "idx").as_posix()}"\n'
+        f'[retrieval]\ngraph = true\n'
+    )
+    # First ingest without graph (temporarily patch cfg to avoid LLM call during ingest)
+    # We do: ingest → but graph=true means build_graph is called inside ingest.
+    # So we monkeypatch LLM for both ingest AND graph-build.
+    async def _fake_query(prompt, options):
+        yield _AssistantMessage("E: NAS\nE: Backup System\nR: Backup System | writes to | NAS\n")
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    # Ingest first (graph=true so build_graph also runs inside ingest → OK with mock)
+    runner.invoke(cli_mod.app, ["ingest", "--config", str(cfg_path)])
+
+    r = runner.invoke(cli_mod.app, ["graph-build", "--config", str(cfg_path)])
+    assert r.exit_code == 0
+    assert "graph built" in r.output.lower()
+    import os
+    assert os.path.isfile(str(tmp_path / "idx" / "graph.json"))

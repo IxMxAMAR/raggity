@@ -147,6 +147,7 @@ Both `rag` and `raggity` are registered as console scripts — they are identica
 | `rag eval golden.jsonl` | Run retrieval quality metrics (Hit@k, MRR, Recall@k) against a golden set |
 | `rag eval golden.jsonl --llm-judge` | LLM-judge eval: faithfulness + answer relevance (2 model calls per question; self-assessed) |
 | `rag watch` | Watch source folders and re-index automatically on file changes (Ctrl-C to stop) |
+| `rag graph-build` | Extract entities/relations from indexed chunks and save `graph.json` (requires `retrieval.graph = true`) |
 
 All commands accept `--config PATH` to point at a non-default config file.
 
@@ -460,6 +461,46 @@ raggity automatically builds an Approximate Nearest Neighbor (ANN) index on the 
 [index]
 ann_threshold = 50000   # build ANN index once chunk count exceeds this
 ```
+
+---
+
+## Phase D features (v0.5.0)
+
+### GraphRAG (opt-in, LLM-cost-heavy)
+
+GraphRAG augments hybrid retrieval with a knowledge graph — entities and relations extracted from your indexed chunks. At query time, entities mentioned in the question are linked to the graph and their neighbourhood chunks are merged into the candidate set before reranking.
+
+**GraphRAG is off by default.** Enable it in `raggity.toml`:
+
+```toml
+[retrieval]
+graph = true          # enable graph-augmented retrieval
+graph_hops = 1        # BFS hops from matched entities (default 1)
+```
+
+Also install the `graph` extra:
+
+```bash
+pip install raggity[graph]
+```
+
+After indexing your sources, build the graph:
+
+```bash
+# Build the knowledge graph (one LLM call per indexed chunk)
+rag graph-build
+```
+
+Alternatively, `rag ingest` builds the graph automatically when `retrieval.graph = true`:
+
+```bash
+# Ingest + graph build in one step
+rag ingest
+```
+
+The graph is saved to `<index.path>/graph.json` and loaded automatically on startup when `graph = true`.
+
+**Cost warning:** `rag graph-build` makes one LLM call per chunk in your index. For large corpora, consider running it once and rebuilding only when your content changes significantly.
 
 ---
 
