@@ -8,7 +8,7 @@ from .config import RaggityConfig, load_config
 from .llm import build_provider
 from .embedder import FastEmbedEmbedder
 from .indexer import IngestReport, Indexer
-from .models import Answer
+from .models import Answer, Document
 from .retriever import Retriever
 from .registry import resolve
 
@@ -60,7 +60,34 @@ class Raggity:
         indexer = Indexer(self.embedder, self.store, self._manifest_path(),
                           fingerprint=self._fingerprint(), chunk_kwargs=chunk_kwargs,
                           ann_threshold=self.cfg.index.ann_threshold)
-        return indexer.ingest(self.cfg.sources.include)
+        report = indexer.ingest(self.cfg.sources.include)
+
+        # Also ingest any configured URLs (depth=0 each, additive — no deletion)
+        if self.cfg.sources.urls:
+            from .connectors.web import WebConnector  # noqa: PLC0415
+            docs: list[Document] = []
+            for url in self.cfg.sources.urls:
+                try:
+                    docs.extend(WebConnector(url, depth=0).fetch())
+                except Exception:
+                    pass  # network errors during ingest are non-fatal
+            if docs:
+                report.added += self.ingest_documents(docs)
+
+        return report
+
+    def ingest_documents(self, docs: list[Document]) -> int:
+        """Chunk and upsert *docs* into the index.  Returns number of docs ingested."""
+        from .chunker import chunk_document  # noqa: PLC0415
+        chunk_kwargs = {"parent_document": self.cfg.retrieval.parent_document,
+                        "parent_target_tokens": self.cfg.retrieval.parent_target_tokens,
+                        "child_target_tokens": self.cfg.retrieval.child_target_tokens}
+        all_chunks = []
+        for doc in docs:
+            all_chunks.extend(chunk_document(doc, **chunk_kwargs))
+        if all_chunks:
+            self.store.upsert(all_chunks, self.embedder)
+        return len(docs)
 
     async def _build_queries(self, question: str, expand, hyde, step_back) -> list[str]:
         rc = self.cfg.retrieval
