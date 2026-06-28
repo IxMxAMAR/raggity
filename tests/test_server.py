@@ -179,3 +179,19 @@ def test_sse_stream_with_session(tmp_path, monkeypatch):
 
         assert "NAS" in body
         assert "sess99" in body
+
+
+# ---------------------------------------------------------------------------
+# RED: web UI root (Task 3)
+# ---------------------------------------------------------------------------
+
+def test_root_serves_web_ui(tmp_path):
+    """GET / returns 200, text/html, body contains 'raggity' and references /ask/stream."""
+    from raggity.server import create_app
+    app = create_app(_cfg(tmp_path))
+    with TestClient(app) as client:
+        r = client.get("/")
+        assert r.status_code == 200
+        assert "text/html" in r.headers["content-type"]
+        assert "raggity" in r.text.lower()
+        assert "/ask/stream" in r.text

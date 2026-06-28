@@ -276,14 +276,21 @@ def watch(config: str = typer.Option(None, "--config"),
 @app.command()
 def serve(config: str = typer.Option(None, "--config"),
           host: str = typer.Option("127.0.0.1", "--host"),
-          port: int = typer.Option(8000, "--port")):
-    """Run the local HTTP API server."""
+          port: int = typer.Option(8000, "--port"),
+          open: bool = typer.Option(False, "--open", help="Open the web UI in the default browser.")):
+    """Run the local HTTP API server (with optional web UI)."""
     try:
         import uvicorn
         from .server import create_app
     except ImportError:
         console.print("[red]The server needs extra deps:[/red] pip install raggity[server]")
         raise typer.Exit(1)
+    if open:
+        import webbrowser
+        try:
+            webbrowser.open(f"http://{host}:{port}")
+        except Exception:  # noqa: BLE001
+            pass
     uvicorn.run(create_app(load_config(config)), host=host, port=port)
 
 
