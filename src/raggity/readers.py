@@ -14,7 +14,11 @@ from pathlib import Path
 # Supported extensions
 # ---------------------------------------------------------------------------
 
-SUPPORTED_EXTS: set[str] = {".md", ".txt", ".pdf", ".docx", ".html", ".csv", ".pptx"}
+SUPPORTED_EXTS: set[str] = {
+    ".md", ".txt", ".pdf", ".docx", ".html", ".csv", ".pptx",
+    # OCR-capable image formats (raggity[ocr] extra)
+    ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -30,15 +34,83 @@ def read_md(path: str) -> str:
     return Path(path).read_text(encoding="utf-8", errors="replace")
 
 
-def read_pdf(path: str) -> str:
-    """Moved verbatim from loader.py."""
-    from pypdf import PdfReader  # already a core dep
+# ---------------------------------------------------------------------------
+# OCR seam — module-level so tests can monkeypatch raggity.readers._run_ocr
+# ---------------------------------------------------------------------------
+
+_ocr_engine_instance = None  # lazy singleton; exposed for test teardown
+
+
+def _run_ocr(src: str) -> str:
+    """Run RapidOCR on *src* (image path) and return joined text.
+
+    Raises RuntimeError with install hint if rapidocr_onnxruntime is absent.
+    This function is a named module-level seam: tests monkeypatch it directly.
+    """
+    global _ocr_engine_instance
+    try:
+        from rapidocr_onnxruntime import RapidOCR  # noqa: PLC0415
+    except (ImportError, TypeError):
+        raise RuntimeError(
+            "OCR needs: pip install raggity[ocr]  "
+            "(rapidocr-onnxruntime + pypdfium2)"
+        )
+    if _ocr_engine_instance is None:
+        _ocr_engine_instance = RapidOCR()
+    result, _ = _ocr_engine_instance(src)
+    if not result:
+        return ""
+    return "\n".join(line[1] for line in result if line and len(line) > 1)
+
+
+# ---------------------------------------------------------------------------
+# PDF seams — both monkeypatchable for tests
+# ---------------------------------------------------------------------------
+
+
+def _pdf_text(path: str) -> str:
+    """Extract embedded text from a PDF via pypdf (existing behaviour)."""
+    from pypdf import PdfReader  # already a core dep  # noqa: PLC0415
 
     reader = PdfReader(path)
     parts = []
     for page in reader.pages:
         parts.append(page.extract_text() or "")
     return "\n".join(parts)
+
+
+def _ocr_pdf(path: str) -> str:
+    """Render each PDF page to an image via pypdfium2, then OCR via _run_ocr."""
+    try:
+        import pypdfium2 as pdfium  # noqa: PLC0415
+    except ImportError:
+        raise RuntimeError(
+            "OCR of scanned PDFs needs: pip install raggity[ocr]  "
+            "(rapidocr-onnxruntime + pypdfium2)"
+        )
+    import tempfile, os  # noqa: E401
+
+    doc = pdfium.PdfDocument(path)
+    parts: list[str] = []
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for i, page in enumerate(doc):
+            bitmap = page.render(scale=2.0)  # 144 dpi → good for OCR
+            pil_image = bitmap.to_pil()
+            img_path = os.path.join(tmpdir, f"page_{i}.png")
+            pil_image.save(img_path)
+            parts.append(_run_ocr(img_path))
+    return "\n".join(parts)
+
+
+def read_pdf(path: str) -> str:
+    """Return embedded text; fall back to OCR if the page text is empty."""
+    t = _pdf_text(path)
+    return t if t.strip() else _ocr_pdf(path)
+
+
+def read_image(path: str) -> str:
+    """OCR an image file via RapidOCR (raggity[ocr] extra required)."""
+    return _run_ocr(path)
 
 
 def read_docx(path: str) -> str:
@@ -90,6 +162,8 @@ def read_pptx(path: str) -> str:
 # Dispatch
 # ---------------------------------------------------------------------------
 
+_IMAGE_EXTS: frozenset[str] = frozenset({".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"})
+
 _DISPATCH: dict[str, object] = {
     ".txt": read_txt,
     ".md": read_md,
@@ -99,6 +173,9 @@ _DISPATCH: dict[str, object] = {
     ".csv": read_csv,
     ".pptx": read_pptx,
 }
+# Register image extensions
+for _ext in _IMAGE_EXTS:
+    _DISPATCH[_ext] = read_image
 
 
 def read_file(path: str) -> str | None:

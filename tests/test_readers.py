@@ -73,6 +73,73 @@ def test_supported_exts_contains_all_formats():
         assert ext in SUPPORTED_EXTS, f"{ext} missing from SUPPORTED_EXTS"
 
 
+def test_image_routes_through_ocr(tmp_path, monkeypatch):
+    import raggity.readers as r
+
+    monkeypatch.setattr(r, "_run_ocr", lambda src: "OCR TEXT FROM IMAGE")
+    (tmp_path / "a.png").write_bytes(b"\x89PNG\r\n\x1a\n")  # bytes irrelevant; OCR is mocked
+    assert "OCR TEXT" in r.read_file(str(tmp_path / "a.png"))
+
+
+def test_scanned_pdf_falls_back_to_ocr(tmp_path, monkeypatch):
+    import raggity.readers as r
+
+    monkeypatch.setattr(r, "_pdf_text", lambda p: "")           # simulate no embedded text
+    monkeypatch.setattr(r, "_ocr_pdf", lambda p: "OCR PDF TEXT")
+    (tmp_path / "scan.pdf").write_bytes(b"%PDF-1.4")
+    assert "OCR PDF TEXT" in r.read_file(str(tmp_path / "scan.pdf"))
+
+
+def test_text_pdf_skips_ocr(tmp_path, monkeypatch):
+    """If _pdf_text returns content, _ocr_pdf must never be called."""
+    import raggity.readers as r
+
+    monkeypatch.setattr(r, "_pdf_text", lambda p: "embedded text content")
+    ocr_called = []
+    monkeypatch.setattr(r, "_ocr_pdf", lambda p: ocr_called.append(True) or "SHOULD NOT SEE")
+    (tmp_path / "text.pdf").write_bytes(b"%PDF-1.4")
+    result = r.read_file(str(tmp_path / "text.pdf"))
+    assert "embedded text content" in result
+    assert not ocr_called
+
+
+def test_image_exts_in_supported_exts():
+    from raggity.readers import SUPPORTED_EXTS
+
+    for ext in {".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"}:
+        assert ext in SUPPORTED_EXTS, f"{ext} missing from SUPPORTED_EXTS"
+
+
+def test_read_image_calls_run_ocr(tmp_path, monkeypatch):
+    import raggity.readers as r
+
+    monkeypatch.setattr(r, "_run_ocr", lambda src: "DIRECT IMAGE OCR")
+    (tmp_path / "b.jpg").write_bytes(b"\xff\xd8\xff")
+    assert "DIRECT IMAGE OCR" in r.read_image(str(tmp_path / "b.jpg"))
+
+
+def test_missing_ocr_dep_raises_friendly(monkeypatch):
+    """_run_ocr raises RuntimeError with install hint when RapidOCR is missing."""
+    import sys
+    import raggity.readers as r
+
+    # Simulate RapidOCR not installed by patching the import inside _run_ocr
+    orig = sys.modules.get("rapidocr_onnxruntime")
+    sys.modules["rapidocr_onnxruntime"] = None  # type: ignore[assignment]
+    # Reset singleton so it re-imports
+    r._ocr_engine_instance = None
+    try:
+        import pytest
+        with pytest.raises(RuntimeError, match="pip install raggity"):
+            r._run_ocr("irrelevant.png")
+    finally:
+        if orig is None:
+            sys.modules.pop("rapidocr_onnxruntime", None)
+        else:
+            sys.modules["rapidocr_onnxruntime"] = orig
+        r._ocr_engine_instance = None
+
+
 def test_read_pdf_via_read_file(tmp_path):
     """read_file dispatches .pdf correctly (uses the moved read_pdf).
     Dispatching .pdf must NOT return None (the unknown-ext sentinel).
