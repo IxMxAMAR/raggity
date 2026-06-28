@@ -18,7 +18,9 @@ services:
     # Mount your config file read-only; edit raggity.toml on the host.
     volumes:
       - ./raggity.toml:/app/raggity.toml:ro
-      - raggity_data:/app/data
+      # raggity's default index.path is .raggity/index → /app/.raggity inside the container,
+      # so mount the volume there to persist the index across restarts.
+      - raggity_data:/app/.raggity
     environment:
       # Pass API keys from the host environment (unset vars are silently ignored).
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
