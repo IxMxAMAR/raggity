@@ -55,6 +55,7 @@ docs-site = ["mkdocs-material>=9.5"]
 
 [project.urls]
 Homepage = "https://github.com/IxMxAMAR/raggity"
+Documentation = "https://ixmxamar.github.io/raggity/"
 Repository = "https://github.com/IxMxAMAR/raggity"
 Issues = "https://github.com/IxMxAMAR/raggity/issues"
 

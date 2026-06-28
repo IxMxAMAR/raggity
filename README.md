@@ -9,6 +9,8 @@ Local-first, top-tier RAG over your notes, docs, and PDFs — answered by Claude
 
 Hybrid retrieval (dense + BM25 + RRF), cross-encoder reranking, dedup, verified inline citations, and selective abstention: raggity only answers when it has evidence.
 
+📚 **Documentation: <https://ixmxamar.github.io/raggity/>**
+
 ---
 
 ## Demo
