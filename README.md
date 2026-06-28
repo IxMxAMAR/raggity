@@ -417,4 +417,7 @@ If you hit a missing wheel on an unsupported platform, open an issue or try buil
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+**GNU AGPL-3.0-or-later.** See [LICENSE](LICENSE). This is a strong copyleft license:
+if you modify raggity and distribute it — or run a modified version as a network/hosted
+service — you must release your source under the AGPL as well. Using raggity as-is to query
+your own documents has no such obligation.
