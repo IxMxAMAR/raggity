@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "raggity"
-version = "0.1.1"
+version = "0.2.0"
 description = "Local-first, top-tier RAG over your notes, docs, and PDFs — answered by Claude."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -45,6 +45,7 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 server = ["fastapi>=0.110", "uvicorn>=0.29"]
 qdrant = ["qdrant-client>=1.9"]
 watch = ["watchdog>=4"]
+openai = ["openai>=1.40"]
 
 [project.urls]
 Homepage = "https://github.com/IxMxAMAR/raggity"
