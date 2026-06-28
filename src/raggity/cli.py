@@ -114,9 +114,7 @@ def eval_cmd(golden: str = typer.Argument(...),
         typer.echo("Running LLM-judge eval (+2 model calls per question)…", err=True)
         import asyncio
         from .evaluate import llm_judge as run_judge
-        res = asyncio.run(run_judge(rag, load_golden(golden),
-                                    model=rag.cfg.generation.model,
-                                    auth=rag.cfg.generation.auth))
+        res = asyncio.run(run_judge(rag, load_golden(golden), rag.provider))
         console.print(f"Faithfulness={res.faithfulness:.3f}  "
                       f"AnswerRelevance={res.answer_relevance:.3f}  (n={res.n})")
         console.print("(note: self-assessed — same model family generates and grades)")

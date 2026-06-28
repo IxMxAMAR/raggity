@@ -56,20 +56,15 @@ def test_llm_judge_averages_verdicts(tmp_path, monkeypatch):
     class _AM:
         def __init__(self, t): self.content = [_Block(t)]
 
-    # answerer returns an answer; judges return YES
-    async def _ans(prompt, options):
-        yield _AM("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(llm_mod, "query", _ans)
-    monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
-    import raggity.evaluate as ev
-    async def _judge(prompt, options):
+    # Both answerer and judge go through llm_mod.query (via ClaudeProvider)
+    async def _fake(prompt, options):
         yield _AM("YES")
-    monkeypatch.setattr(ev, "query", _judge)
-    monkeypatch.setattr(ev, "AssistantMessage", _AM)
+    monkeypatch.setattr(llm_mod, "query", _fake)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
 
     from raggity.core import Raggity
     rag = Raggity(cfg); rag.ingest()
     golden = [{"question": "how are backups done?", "relevant_source_paths": ["a.md"]}]
-    res = asyncio.run(llm_judge(rag, golden))
+    res = asyncio.run(llm_judge(rag, golden, rag.provider))
     assert isinstance(res, JudgeResult)
     assert res.faithfulness == 1.0 and res.answer_relevance == 1.0 and res.n == 1

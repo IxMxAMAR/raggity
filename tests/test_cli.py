@@ -33,16 +33,11 @@ def test_ingest_then_status(tmp_path):
 
 
 def test_ask_expand_flag(tmp_path, monkeypatch):
-    import raggity.query_transform as qt
     cfg = _make_config(tmp_path)
     runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
 
-    async def _fake_expand(prompt, options):
-        yield _AssistantMessage("backups overview\nNAS schedule")
-    monkeypatch.setattr(qt, "query", _fake_expand)
-    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
-
     async def _fake_query(prompt, options):
+        # serve both expand variations and final answer via llm_mod.query
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
     monkeypatch.setattr(llm_mod, "query", _fake_query)
     monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
@@ -80,18 +75,13 @@ def test_ask_plain(tmp_path, monkeypatch):
 
 def test_ask_hyde_flag(tmp_path, monkeypatch):
     """CLI --hyde --plain should work and print the answer."""
-    import raggity.query_transform as qt
     cfg = _make_config(tmp_path)
     runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
 
-    async def _fake_qt(prompt, options):
-        yield _AssistantMessage("Backups are stored on a NAS device nightly.")
-    monkeypatch.setattr(qt, "query", _fake_qt)
-    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
-
-    async def _fake_answer(prompt, options):
+    # All LLM calls (HyDE generation + final answer) go through llm_mod.query
+    async def _fake_query(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(llm_mod, "query", _fake_answer)
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
     monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
 
     r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg,
@@ -101,18 +91,13 @@ def test_ask_hyde_flag(tmp_path, monkeypatch):
 
 def test_ask_decompose_flag(tmp_path, monkeypatch):
     """CLI --decompose --plain should call ask_decompose and print the answer."""
-    import raggity.query_transform as qt
     cfg = _make_config(tmp_path)
     runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
 
-    async def _fake_decomp(prompt, options):
-        yield _AssistantMessage("how often?\nwhere stored?")
-    monkeypatch.setattr(qt, "query", _fake_decomp)
-    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
-
-    async def _fake_answer(prompt, options):
+    # All LLM calls (decompose + answer) go through llm_mod.query
+    async def _fake_query(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(llm_mod, "query", _fake_answer)
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
     monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
 
     r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg,
@@ -122,18 +107,12 @@ def test_ask_decompose_flag(tmp_path, monkeypatch):
 
 def test_ask_decompose_overrides_other_transforms(tmp_path, monkeypatch):
     """--decompose combined with --expand prints override note."""
-    import raggity.query_transform as qt
     cfg = _make_config(tmp_path)
     runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
 
-    async def _fake_decomp(prompt, options):
-        yield _AssistantMessage("how often?\nwhere stored?")
-    monkeypatch.setattr(qt, "query", _fake_decomp)
-    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
-
-    async def _fake_answer(prompt, options):
+    async def _fake_query(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(llm_mod, "query", _fake_answer)
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
     monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
 
     r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg,

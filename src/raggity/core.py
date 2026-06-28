@@ -67,18 +67,17 @@ class Raggity:
         use_expand = rc.expand if expand is None else expand
         use_hyde = rc.hyde if hyde is None else hyde
         use_step = rc.step_back if step_back is None else step_back
-        m, a = self.cfg.generation.model, self.cfg.generation.auth
         if use_expand:
             from .query_transform import generate_query_variations
-            queries = await generate_query_variations(question, rc.expand_n, model=m, auth=a)
+            queries = await generate_query_variations(question, rc.expand_n, self.provider)
         else:
             queries = [question]
         if use_hyde:
             from .query_transform import generate_hyde_document
-            queries.append(await generate_hyde_document(question, model=m, auth=a))
+            queries.append(await generate_hyde_document(question, self.provider))
         if use_step:
             from .query_transform import generate_step_back_question
-            queries.append(await generate_step_back_question(question, model=m, auth=a))
+            queries.append(await generate_step_back_question(question, self.provider))
         return queries
 
     def ask(self, question: str, expand: bool | None = None,
@@ -114,9 +113,7 @@ class Raggity:
 
     async def aask_decompose(self, question: str) -> Answer:
         from .query_transform import decompose_question
-        subs = await decompose_question(question, self.cfg.retrieval.expand_n,
-                                        model=self.cfg.generation.model,
-                                        auth=self.cfg.generation.auth)
+        subs = await decompose_question(question, self.cfg.retrieval.expand_n, self.provider)
         merged: dict[str, object] = {}
         for q in [question] + subs:
             for c in self.retriever.retrieve(q):

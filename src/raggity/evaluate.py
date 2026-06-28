@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage
+from .llm import LLMProvider
 
 
 @dataclass
@@ -65,35 +65,18 @@ class JudgeResult:
     n: int
 
 
-def _judge_options(system_prompt: str, model: str, auth: str) -> ClaudeAgentOptions:
-    import os
-    env = None
-    if auth == "subscription":
-        env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
-    return ClaudeAgentOptions(system_prompt=system_prompt, model=model,
-                              allowed_tools=[], permission_mode="dontAsk",
-                              **({"env": env} if env is not None else {}))
-
-
-async def _yes_no(prompt: str, system_prompt: str, model: str, auth: str) -> bool:
-    parts: list[str] = []
-    async for message in query(prompt=prompt, options=_judge_options(system_prompt, model, auth)):
-        if isinstance(message, AssistantMessage):
-            for block in message.content:
-                t = getattr(block, "text", None)
-                if t:
-                    parts.append(t)
-    return "yes" in "".join(parts).strip().lower()[:5]
-
-
 _FAITH_SYS = ("You are a strict grader. Answer ONLY 'YES' or 'NO'. YES if every claim in the "
               "ANSWER is supported by the CONTEXT; NO otherwise.")
 _REL_SYS = ("You are a strict grader. Answer ONLY 'YES' or 'NO'. YES if the ANSWER directly "
             "addresses the QUESTION; NO otherwise.")
 
 
-async def llm_judge(rag, golden: list[dict], model: str = "claude-opus-4-8",
-                    auth: str = "auto") -> JudgeResult:
+async def _yes_no(prompt: str, system_prompt: str, provider: LLMProvider) -> bool:
+    result = await provider.complete(system_prompt, prompt)
+    return "yes" in result.lower()[:5]
+
+
+async def llm_judge(rag, golden: list[dict], provider: LLMProvider) -> JudgeResult:
     f_total = 0.0
     r_total = 0.0
     n = 0
@@ -108,9 +91,9 @@ async def llm_judge(rag, golden: list[dict], model: str = "claude-opus-4-8",
             continue
         context = "\n\n".join(c.text for c in chunks)
         faith = await _yes_no(f"CONTEXT:\n{context}\n\nANSWER:\n{answer.text}",
-                              _FAITH_SYS, model, auth)
+                              _FAITH_SYS, provider)
         rel = await _yes_no(f"QUESTION:\n{q}\n\nANSWER:\n{answer.text}",
-                            _REL_SYS, model, auth)
+                            _REL_SYS, provider)
         f_total += 1.0 if faith else 0.0
         r_total += 1.0 if rel else 0.0
     if n == 0:
