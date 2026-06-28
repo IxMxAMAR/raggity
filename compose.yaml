@@ -1,0 +1,45 @@
+services:
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  raggity:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - qdrant
+    ports:
+      - "8000:8000"
+    # Mount your config file read-only; edit raggity.toml on the host.
+    volumes:
+      - ./raggity.toml:/app/raggity.toml:ro
+      - raggity_data:/app/data
+    environment:
+      # Pass API keys from the host environment (unset vars are silently ignored).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    # env_file:
+    #   - .env   # uncomment to load an .env file instead
+
+  # ---------------------------------------------------------------------------
+  # Ollama — local LLM sidecar.  Start with:  docker compose --profile ollama up
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    profiles:
+      - ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+
+volumes:
+  qdrant_storage:
+  raggity_data:
+  ollama_models:

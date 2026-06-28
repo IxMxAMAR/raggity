@@ -646,6 +646,83 @@ If you hit a missing wheel on an unsupported platform, open an issue or try buil
 
 ---
 
+## Docker
+
+### Quick start
+
+```bash
+# Clone the repo (or copy compose.yaml + raggity.toml to an empty directory)
+git clone https://github.com/IxMxAMAR/raggity
+cd raggity
+
+# Copy and edit your config
+cp raggity.example.toml raggity.toml
+# — edit raggity.toml to point at your sources and choose a backend —
+
+# Start raggity + Qdrant
+docker compose up
+```
+
+The raggity server is available at `http://localhost:8000`.
+
+### Environment variables
+
+Pass API keys via the environment or a `.env` file:
+
+| Variable | Purpose |
+|---|---|
+| `ANTHROPIC_API_KEY` | Claude API key (if not using `claude login` subscription) |
+| `OPENAI_API_KEY` | OpenAI-compatible backend key |
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... docker compose up
+```
+
+Or create a `.env` file and uncomment the `env_file` line in `compose.yaml`.
+
+### Volumes
+
+| Volume | Purpose |
+|---|---|
+| `./raggity.toml` | Config file — mounted read-only into `/app/raggity.toml` |
+| `raggity_data` | Index data (LanceDB / embeddings) persisted across restarts |
+| `qdrant_storage` | Qdrant vector store data |
+
+### Optional Ollama sidecar
+
+To run raggity against a local Ollama model instead of Claude or OpenAI, start the `ollama` compose profile:
+
+```bash
+docker compose --profile ollama up
+```
+
+Then configure `raggity.toml`:
+
+```toml
+[generation]
+backend = "ollama"
+model = "llama3.1"
+# base_url defaults to http://ollama:11434/v1 inside compose
+```
+
+Pull the model inside the running container:
+
+```bash
+docker compose exec ollama ollama pull llama3.1
+```
+
+### Pre-built image
+
+Tagged releases are automatically published to GHCR:
+
+```bash
+docker pull ghcr.io/ixmxamar/raggity:latest
+# or pin to a release:
+docker pull ghcr.io/ixmxamar/raggity:0.6.0
+```
+
+---
+
 ## License
 
 **GNU AGPL-3.0-or-later.** See [LICENSE](LICENSE). This is a strong copyleft license:
