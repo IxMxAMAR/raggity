@@ -2,12 +2,15 @@ from __future__ import annotations
 import json
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+
+_WEB_DIR = Path(__file__).parent / "web"
 
 from .config import RaggityConfig
 from .conversation import Conversation
@@ -148,5 +151,9 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
                 yield f"event: done\ndata: {json.dumps(done_payload)}\n\n"
 
         return StreamingResponse(_event_stream(), media_type="text/event-stream")
+
+    @app.get("/")
+    async def root():
+        return FileResponse(_WEB_DIR / "index.html", media_type="text/html")
 
     return app

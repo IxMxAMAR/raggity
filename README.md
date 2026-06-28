@@ -139,6 +139,9 @@ Both `rag` and `raggity` are registered as console scripts — they are identica
 | `rag ask "..." --step-back` | Step-back query transform — generate a broader question for higher-level context |
 | `rag ask "..." --decompose` | Decompose into sub-questions, retrieve for each, merge and answer |
 | `rag ask "..." --no-cache` | Bypass the answer cache even when `generation.cache = true` |
+| `rag chat` | Start an interactive multi-turn chat REPL in the terminal |
+| `rag serve` | Start the local HTTP API server |
+| `rag serve --open` | Start the server and open the web chat UI in your default browser |
 | `rag status` | Show index statistics (chunk count, source count, index path) |
 | `rag reindex --force` | Wipe and rebuild the index from scratch |
 | `rag eval golden.jsonl` | Run retrieval quality metrics (Hit@k, MRR, Recall@k) against a golden set |
@@ -497,19 +500,58 @@ Start the server:
 rag serve
 ```
 
-Endpoints:
+Open the web chat UI automatically:
+
+```bash
+rag serve --open
+```
+
+`--open` calls `webbrowser.open(http://host:port)` just before the server starts — best-effort, guarded, no error if a browser cannot be launched.
+
+#### Web UI
+
+`GET /` serves a self-contained single-page chat UI (vanilla JS, no build step, no CDN required). It streams answers from `/ask/stream` via `EventSource`, keeps a `session_id` in memory across the tab's lifetime, and renders a "Sources" list from the terminal SSE `done` event.
+
+#### REST endpoints
+
+- `GET /` — web chat UI (HTML)
 - `POST /ingest` — trigger incremental indexing
-- `POST /ask` — ask a question; request body: `{"question": "...", "expand": false}` (returns JSON with `answer`, `abstained`, `citations`)
+- `POST /ask` — ask a question (optionally with a `session_id` to enable multi-turn history); returns JSON with `answer`, `abstained`, `citations`, and optionally `session_id`
+- `POST /chat` — stateful chat endpoint; always creates or reuses a session; returns `session_id`
+- `GET /ask/stream?question=...&session_id=...` — SSE streaming answer; yields `data:` delta chunks, then a terminal `event: done` with a JSON payload containing `citations` (and `session_id` when provided)
+- `DELETE /session/{id}` — discard a conversation session
 - `GET /status` — index statistics
+
+#### Server sessions
+
+Pass `session_id` on any `/ask` or `/ask/stream` request to thread conversation history across turns. The session lives in server memory for the lifetime of the process. Use `DELETE /session/{id}` to clear it.
 
 Example:
 ```bash
+# Stateless single-turn ask
 curl -X POST http://localhost:8000/ask \
   -H "content-type: application/json" \
   -d '{"question": "How do I set up a new dev environment?"}'
+
+# Multi-turn session
+SID=$(python -c "import uuid; print(uuid.uuid4().hex)")
+curl -X POST http://localhost:8000/chat \
+  -H "content-type: application/json" \
+  -d "{\"question\": \"What are backups?\", \"session_id\": \"$SID\"}"
+
+# SSE streaming
+curl -N "http://localhost:8000/ask/stream?question=What+are+backups%3F&session_id=$SID"
 ```
 
 The server respects your `raggity.toml` config, using the same auth, embedding, and retrieval settings as the CLI.
+
+### Terminal chat REPL
+
+```bash
+rag chat
+```
+
+Starts an interactive multi-turn conversation in your terminal. Type a question and press Enter; raggity streams the answer token-by-token with verified source footnotes. Type `exit` or press Ctrl-D to quit.
 
 ### Streaming
 
