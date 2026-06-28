@@ -144,6 +144,70 @@ def test_retrieve_parent_document_returns_parent_text():
     assert out[0].text == "RELEVANT PARENT CONTEXT"
 
 
+class FakeStoreWithGraphIds:
+    """FakeStore that also implements get_by_chunk_ids."""
+    def __init__(self, vec, txt, graph_chunks=None):
+        self._vec, self._txt = vec, txt
+        self._graph_chunks = {c.chunk_id: c for c in (graph_chunks or [])}
+
+    def vector_search(self, qv, limit):
+        return self._vec[:limit]
+
+    def text_search(self, q, limit):
+        return self._txt[:limit]
+
+    def get_by_chunk_ids(self, ids):
+        return [self._graph_chunks[cid] for cid in ids if cid in self._graph_chunks]
+
+
+def test_retrieve_merges_graph_neighborhood():
+    """When cfg.graph=True and graph_chunk_ids provided, extra chunk is merged before rerank."""
+    # hybrid hit: c1 (score 0.7); graph neighborhood: c2 (not in hybrid hits)
+    c1 = _chunk("c1", "relevant alpha", score=0.7)
+    c2 = _chunk("c2", "graph extra chunk", score=0.0)
+
+    store = FakeStoreWithGraphIds([c1], [c1], graph_chunks=[c2])
+    cfg = RetrievalConfig(candidates=10, top_k=5, rerank=True, relevance_floor=0.0,
+                          sufficiency_floor=0.5, dedup_cosine=1.01, graph=True, graph_hops=1)
+    r = Retriever(FakeEmbedder(), store, FakeReranker(), cfg)
+
+    out = r.retrieve_multi(["q"], "q", graph_chunk_ids=["c2"])
+    ids = {c.chunk_id for c in out}
+    assert "c1" in ids, "hybrid hit must be present"
+    assert "c2" in ids, "graph neighborhood chunk must be merged in"
+
+
+def test_retrieve_graph_off_ignores_graph_chunk_ids():
+    """When cfg.graph=False, graph_chunk_ids are NOT merged (default behavior unchanged)."""
+    c1 = _chunk("c1", "relevant alpha", score=0.7)
+    c2 = _chunk("c2", "graph extra chunk", score=0.0)
+
+    store = FakeStoreWithGraphIds([c1], [c1], graph_chunks=[c2])
+    # graph=False (default)
+    cfg = RetrievalConfig(candidates=10, top_k=5, rerank=True, relevance_floor=0.0,
+                          sufficiency_floor=0.5, dedup_cosine=1.01)
+    r = Retriever(FakeEmbedder(), store, FakeReranker(), cfg)
+
+    out = r.retrieve_multi(["q"], "q", graph_chunk_ids=["c2"])
+    ids = {c.chunk_id for c in out}
+    assert "c1" in ids
+    assert "c2" not in ids, "graph chunk must NOT be merged when cfg.graph=False"
+
+
+def test_retrieve_graph_deduplicates_overlap():
+    """If graph neighborhood chunk already in hybrid hits, no duplicate in result."""
+    c1 = _chunk("c1", "relevant alpha", score=0.7)
+
+    store = FakeStoreWithGraphIds([c1], [c1], graph_chunks=[c1])
+    cfg = RetrievalConfig(candidates=10, top_k=5, rerank=True, relevance_floor=0.0,
+                          sufficiency_floor=0.5, dedup_cosine=1.01, graph=True, graph_hops=1)
+    r = Retriever(FakeEmbedder(), store, FakeReranker(), cfg)
+
+    out = r.retrieve_multi(["q"], "q", graph_chunk_ids=["c1"])
+    chunk_ids = [c.chunk_id for c in out]
+    assert chunk_ids.count("c1") == 1, "chunk_id must not appear twice"
+
+
 class FakeRerankerLowAbsolute:
     """Simulates a cross-encoder that gives a low absolute score (e.g. 0.0) even for relevant chunks."""
     def rerank(self, query, chunks):

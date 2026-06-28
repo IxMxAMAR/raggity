@@ -64,7 +64,8 @@ class Retriever:
     def retrieve(self, query: str) -> list[Chunk]:
         return self.retrieve_multi([query], query)
 
-    def retrieve_multi(self, queries: list[str], rerank_query: str) -> list[Chunk]:
+    def retrieve_multi(self, queries: list[str], rerank_query: str,
+                       graph_chunk_ids: list[str] | None = None) -> list[Chunk]:
         """Gather candidates across all queries, fuse via RRF, rerank, then return top-k.
 
         Abstention is keyed on the DENSE cosine similarity (reliable: relevant ~0.6–0.8,
@@ -119,6 +120,14 @@ class Retriever:
         # If max_dense < sufficiency_floor, the top retrieved doc is not relevant enough.
         if not candidates or max_dense < self.cfg.sufficiency_floor:
             return []
+
+        # Graph-augmented retrieval: merge neighborhood chunks before rerank (opt-in).
+        if getattr(self.cfg, "graph", False) and graph_chunk_ids:
+            existing_ids = {c.chunk_id for c in candidates}
+            extra_ids = [cid for cid in graph_chunk_ids if cid not in existing_ids]
+            if extra_ids:
+                extra_chunks = self.store.get_by_chunk_ids(extra_ids)
+                candidates = candidates + extra_chunks
 
         if self.cfg.rerank:
             candidates = self.reranker.rerank(rerank_query, candidates)

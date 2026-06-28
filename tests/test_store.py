@@ -91,3 +91,32 @@ def test_from_config_builds_lancedb(tmp_path):
     cfg = RaggityConfig(index=IndexConfig(path=str(tmp_path / "idx")))
     s = LanceDBStore.from_config(cfg, 384)
     assert s.count() == 0
+
+
+def test_get_by_chunk_ids(tmp_path, emb):
+    s = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    s.upsert([_chunk("c1", "alpha"), _chunk("c2", "beta", ordinal=1)], emb)
+    got = s.get_by_chunk_ids(["c2"])
+    assert len(got) == 1 and got[0].chunk_id == "c2"
+
+
+def test_get_by_chunk_ids_multiple(tmp_path, emb):
+    s = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    s.upsert([_chunk("c1", "alpha"), _chunk("c2", "beta", ordinal=1),
+              _chunk("c3", "gamma", ordinal=2)], emb)
+    got = s.get_by_chunk_ids(["c1", "c3"])
+    ids = {c.chunk_id for c in got}
+    assert ids == {"c1", "c3"}
+
+
+def test_get_by_chunk_ids_empty(tmp_path, emb):
+    s = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    s.upsert([_chunk("c1", "alpha")], emb)
+    assert s.get_by_chunk_ids([]) == []
+
+
+def test_get_by_chunk_ids_missing(tmp_path, emb):
+    s = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    s.upsert([_chunk("c1", "alpha")], emb)
+    got = s.get_by_chunk_ids(["nonexistent"])
+    assert got == []

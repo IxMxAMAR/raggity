@@ -38,6 +38,10 @@ class VectorStore(ABC):
     def reset(self) -> None: ...
     @abstractmethod
     def ensure_ann_index(self, threshold: int) -> None: ...
+    @abstractmethod
+    def get_by_chunk_ids(self, ids: list[str]) -> list[Chunk]: ...
+    @abstractmethod
+    def all_chunks(self) -> list[Chunk]: ...
     @classmethod
     @abstractmethod
     def from_config(cls, cfg, dim: int) -> "VectorStore": ...
@@ -179,6 +183,34 @@ class LanceDBStore(VectorStore):
             self._tbl.create_index(metric="cosine", vector_column_name="vector", replace=True)
         except Exception as exc:
             log.warning("ANN index build skipped: %s", exc)
+
+    def get_by_chunk_ids(self, ids: list[str]) -> list[Chunk]:
+        if not ids:
+            return []
+        # Build a SQL-safe IN predicate with single-quote escaping
+        escaped = ", ".join(f"'{i.replace(chr(39), chr(39)+chr(39))}'" for i in ids)
+        predicate = f"chunk_id IN ({escaped})"
+        try:
+            rows = self._tbl.search().where(predicate, prefilter=True).limit(len(ids)).to_list()
+        except Exception:
+            # Fallback: scan and filter
+            rows = [r for r in self._tbl.search().limit(1_000_000).to_list()
+                    if r["chunk_id"] in set(ids)]
+        return [_row_to_chunk(r) for r in rows]
+
+    def all_chunks(self) -> list[Chunk]:
+        """Return all chunks in the store (used for graph building)."""
+        n = self.count()
+        if n == 0:
+            return []
+        try:
+            rows = self._tbl.to_lance().to_table(
+                columns=["chunk_id", "source_path", "title", "heading_path",
+                         "ordinal", "text", "parent_id", "parent_text"]
+            ).to_pylist()
+        except Exception:
+            rows = self._tbl.search().limit(n).to_list()
+        return [_row_to_chunk(r) for r in rows]
 
 
 register("store", "lancedb", "raggity.store:LanceDBStore")

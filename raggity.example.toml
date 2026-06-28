@@ -26,6 +26,11 @@ relevance_floor = 0.3
 # Query transforms (off by default — each adds one model call):
 # hyde = true         # generate a hypothetical answer passage to improve dense recall
 # step_back = true    # generate a broader "step-back" question to retrieve higher-level context
+# GraphRAG (opt-in, LLM-cost-heavy — one LLM call per chunk at build time):
+# Requires: pip install raggity[graph]
+# After enabling, run: rag graph-build   (or rag ingest will build automatically)
+# graph = true        # enable graph-augmented retrieval (off by default)
+# graph_hops = 1      # BFS neighbourhood hops from matched entities (default 1)
 
 [generation]
 backend = "claude"        # claude (default) | openai | ollama

@@ -72,9 +72,9 @@ def test_core_ask_hyde_routes_retrieve_multi(tmp_path, monkeypatch):
 
     retrieve_multi_calls = []
     original_retrieve_multi = rag.retriever.retrieve_multi
-    def _spy_multi(queries, question):
+    def _spy_multi(queries, question, **kwargs):
         retrieve_multi_calls.append(queries)
-        return original_retrieve_multi(queries, question)
+        return original_retrieve_multi(queries, question, **kwargs)
     monkeypatch.setattr(rag.retriever, "retrieve_multi", _spy_multi)
 
     ans = rag.ask("how are backups done?", hyde=True)
@@ -138,6 +138,112 @@ def test_aask_decompose_merges_and_answers(tmp_path, monkeypatch):
     import asyncio
     ans = asyncio.run(rag.aask_decompose("how are backups done?"))
     assert "NAS" in ans.text
+
+
+def test_core_build_graph_requires_graph_true(tmp_path):
+    """build_graph raises RuntimeError when cfg.retrieval.graph=False (default)."""
+    from raggity.config import RaggityConfig, IndexConfig
+    from raggity.core import Raggity
+    import asyncio
+    cfg = RaggityConfig(index=IndexConfig(path=str(tmp_path / "idx")))
+    rag = Raggity(cfg)
+    with pytest.raises(RuntimeError, match="graph"):
+        asyncio.run(rag.build_graph())
+
+
+async def test_core_build_graph_saves_graph_json(tmp_path, monkeypatch):
+    """build_graph creates graph.json after extraction (mocked LLM)."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    from raggity.config import RaggityConfig, SourcesConfig, IndexConfig, RetrievalConfig
+    from raggity.core import Raggity
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+        retrieval=RetrievalConfig(graph=True),
+    )
+
+    class _Block:
+        def __init__(self, t): self.text = t
+    class _AM:
+        def __init__(self, t): self.content = [_Block(t)]
+
+    async def _fake_query(prompt, options):
+        yield _AM("E: NAS\nE: Backup System\nR: Backup System | writes to | NAS\n")
+
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
+
+    rag = Raggity(cfg)
+    rag.ingest()
+    # graph.json must exist after ingest with graph=true
+    import os
+    assert os.path.isfile(str(tmp_path / "idx" / "graph.json"))
+    # rag._graph must be loaded
+    assert rag._graph is not None
+    assert rag._graph.count() >= 1
+
+
+async def test_core_build_graph_standalone(tmp_path, monkeypatch):
+    """Explicit rag graph-build path: ingest first (no graph), then build_graph()."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    from raggity.config import RaggityConfig, SourcesConfig, IndexConfig, RetrievalConfig
+    from raggity.core import Raggity
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+        retrieval=RetrievalConfig(graph=True),
+    )
+
+    class _Block:
+        def __init__(self, t): self.text = t
+    class _AM:
+        def __init__(self, t): self.content = [_Block(t)]
+
+    async def _fake_query(prompt, options):
+        yield _AM("E: NAS\nE: Backups\n")
+
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
+
+    rag = Raggity(cfg)
+    # Manually ingest without graph building by temporarily disabling graph
+    from raggity.config import RetrievalConfig as RC
+    import raggity.core as core_mod
+    # Ingest without triggering graph build: just call indexer directly
+    from raggity.indexer import Indexer
+    chunk_kwargs = {"parent_document": False, "parent_target_tokens": 1024,
+                    "child_target_tokens": 256}
+    indexer = Indexer(rag.embedder, rag.store, rag._manifest_path(),
+                      fingerprint=rag._fingerprint(), chunk_kwargs=chunk_kwargs,
+                      ann_threshold=rag.cfg.index.ann_threshold)
+    indexer.ingest(cfg.sources.include)
+    assert rag.store.count() >= 1
+
+    await rag.build_graph()
+    import os
+    assert os.path.isfile(str(tmp_path / "idx" / "graph.json"))
+    assert rag._graph is not None and rag._graph.count() >= 1
+
+
+def test_core_graph_load_on_init(tmp_path, monkeypatch):
+    """Raggity loads graph.json on __init__ when cfg.retrieval.graph=True and file exists."""
+    from raggity.config import RaggityConfig, IndexConfig, RetrievalConfig
+    from raggity.core import Raggity
+    from raggity.graph import GraphStore
+
+    # Write a fake graph.json
+    idx = tmp_path / "idx"; idx.mkdir()
+    g = GraphStore()
+    g.add(["NAS"], [], "c1")
+    g.save(str(idx / "graph.json"))
+
+    cfg = RaggityConfig(index=IndexConfig(path=str(idx)),
+                        retrieval=RetrievalConfig(graph=True))
+    rag = Raggity(cfg)
+    assert rag._graph is not None
+    assert rag._graph.count() == 1
 
 
 def test_core_chat_two_turns_appends_conversation(tmp_path, monkeypatch):

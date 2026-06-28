@@ -61,3 +61,31 @@ def test_reset_empties(emb):
 
 def test_ensure_ann_index_noop(emb):
     _store(emb.dim).ensure_ann_index(1)   # no-op, must not raise
+
+
+def test_get_by_chunk_ids(emb):
+    s = _store(emb.dim)
+    s.upsert([_chunk("c1", "alpha"), _chunk("c2", "beta", ordinal=1)], emb)
+    got = s.get_by_chunk_ids(["c2"])
+    assert len(got) == 1 and got[0].chunk_id == "c2"
+
+
+def test_get_by_chunk_ids_multiple(emb):
+    s = _store(emb.dim)
+    s.upsert([_chunk("c1", "alpha"), _chunk("c2", "beta", ordinal=1),
+              _chunk("c3", "gamma", ordinal=2)], emb)
+    got = s.get_by_chunk_ids(["c1", "c3"])
+    ids = {c.chunk_id for c in got}
+    assert ids == {"c1", "c3"}
+
+
+def test_get_by_chunk_ids_empty(emb):
+    s = _store(emb.dim)
+    s.upsert([_chunk("c1", "alpha")], emb)
+    assert s.get_by_chunk_ids([]) == []
+
+
+def test_get_by_chunk_ids_missing(emb):
+    s = _store(emb.dim)
+    s.upsert([_chunk("c1", "alpha")], emb)
+    assert s.get_by_chunk_ids(["nonexistent"]) == []

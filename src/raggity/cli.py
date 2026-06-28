@@ -98,6 +98,32 @@ def ingest_obsidian(
     console.print(f"[green]Ingested {added} note(s) from {vault}.[/green]")
 
 
+@app.command(name="graph-build")
+def graph_build(config: str = typer.Option(None, "--config")):
+    """Extract entities/relations from all indexed chunks and build graph.json.
+
+    Requires retrieval.graph = true in the config. LLM-cost-heavy: one provider
+    call per indexed chunk. Run after `rag ingest` to populate the graph, or use
+    `rag ingest` with retrieval.graph = true to do both in one step.
+    """
+    import asyncio
+    rag = _rag(config)
+    if not rag.cfg.retrieval.graph:
+        console.print("[red]Error:[/red] retrieval.graph must be true to run graph-build.")
+        raise typer.Exit(1)
+    n = rag.store.count()
+    if n == 0:
+        console.print("[yellow]Index is empty — run `rag ingest` first.[/yellow]")
+        raise typer.Exit(1)
+    console.print(f"Building graph from [cyan]{n}[/cyan] chunks (+{n} LLM calls)…")
+    try:
+        asyncio.run(rag.build_graph())
+    except Exception as exc:
+        console.print(f"[red]Graph build failed:[/red] {exc}")
+        raise typer.Exit(1)
+    console.print("[green]Graph built.[/green]")
+
+
 @app.command()
 def ask(question: str, config: str = typer.Option(None, "--config"),
         plain: bool = typer.Option(False, "--plain"),
