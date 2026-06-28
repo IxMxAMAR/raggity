@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-import raggity.answerer as answerer_mod
+import raggity.llm as llm_mod
 from raggity.config import RaggityConfig, SourcesConfig, IndexConfig
 
 
@@ -26,8 +26,8 @@ def test_server_ingest_status_ask(tmp_path, monkeypatch):
         assert st["chunks"] >= 1
         async def _fake_query(prompt, options):
             yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-        monkeypatch.setattr(answerer_mod, "query", _fake_query)
-        monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+        monkeypatch.setattr(llm_mod, "query", _fake_query)
+        monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
         resp = client.post("/ask", json={"question": "how are backups done?"})
         assert resp.status_code == 200
         body = resp.json()

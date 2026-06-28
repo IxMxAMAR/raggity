@@ -1,5 +1,5 @@
 import pytest
-import raggity.answerer as answerer_mod
+import raggity.llm as llm_mod
 from raggity.config import RaggityConfig, SourcesConfig, IndexConfig
 
 
@@ -38,8 +38,8 @@ def test_core_ask_uses_pipeline(tmp_path, monkeypatch):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#" +
                                 "00000000].")
 
-    monkeypatch.setattr(answerer_mod, "query", _fake_query)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
 
     from raggity.core import Raggity
     rag = Raggity(cfg)
@@ -64,11 +64,11 @@ def test_core_ask_hyde_routes_retrieve_multi(tmp_path, monkeypatch):
     monkeypatch.setattr(qt, "query", _fake_qt)
     monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
 
-    # Mock answerer query to return a final answer
+    # Mock llm query to return a final answer
     async def _fake_answer(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(answerer_mod, "query", _fake_answer)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    monkeypatch.setattr(llm_mod, "query", _fake_answer)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
 
     from raggity.core import Raggity
     rag = Raggity(cfg)
@@ -97,8 +97,8 @@ def test_aask_cache_hit_skips_model(tmp_path, monkeypatch):
     async def _ans(prompt, options):
         calls["n"] += 1
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(answerer_mod, "query", _ans)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    monkeypatch.setattr(llm_mod, "query", _ans)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
     from raggity.core import Raggity
     rag = Raggity(cfg); rag.ingest()
     a1 = rag.ask("how are backups done?")
@@ -115,8 +115,8 @@ def test_core_qdrant_backend_ingest_ask(tmp_path, monkeypatch):
                                           qdrant_location=":memory:", qdrant_collection="t"))
     async def _fake_query(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(answerer_mod, "query", _fake_query)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
     from raggity.core import Raggity
     rag = Raggity(cfg); rag.ingest()
     assert rag.status()["chunks"] >= 1
@@ -136,8 +136,8 @@ def test_aask_decompose_merges_and_answers(tmp_path, monkeypatch):
     monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
     async def _ans(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(answerer_mod, "query", _ans)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    monkeypatch.setattr(llm_mod, "query", _ans)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
     from raggity.core import Raggity
     rag = Raggity(cfg); rag.ingest()
     import asyncio

@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import os
 
-from .answerer import ClaudeAgentAnswerer
+from .answerer import ProviderAnswerer
 from .config import RaggityConfig, load_config
+from .llm import build_provider
 from .embedder import FastEmbedEmbedder
 from .indexer import IngestReport, Indexer
 from .models import Answer
@@ -34,8 +35,8 @@ class Raggity:
             self.reranker = FastEmbedReranker(model_name=self.cfg.retrieval.rerank_model)
         self.retriever = Retriever(self.embedder, self.store, self.reranker,
                                    self.cfg.retrieval)
-        self.answerer = ClaudeAgentAnswerer(model=self.cfg.generation.model,
-                                            auth=self.cfg.generation.auth)
+        self.provider = build_provider(self.cfg.generation)
+        self.answerer = ProviderAnswerer(self.provider)
 
     @classmethod
     def from_config(cls, path: str | None = None) -> "Raggity":

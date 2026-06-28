@@ -43,7 +43,7 @@ def test_evaluate_n_zero():
 
 
 def test_llm_judge_averages_verdicts(tmp_path, monkeypatch):
-    import asyncio, raggity.answerer as answerer_mod
+    import asyncio, raggity.llm as llm_mod
     from raggity.evaluate import llm_judge, JudgeResult
     from raggity.config import RaggityConfig, SourcesConfig, IndexConfig
     notes = tmp_path / "notes"; notes.mkdir()
@@ -59,8 +59,8 @@ def test_llm_judge_averages_verdicts(tmp_path, monkeypatch):
     # answerer returns an answer; judges return YES
     async def _ans(prompt, options):
         yield _AM("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(answerer_mod, "query", _ans)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AM)
+    monkeypatch.setattr(llm_mod, "query", _ans)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
     import raggity.evaluate as ev
     async def _judge(prompt, options):
         yield _AM("YES")

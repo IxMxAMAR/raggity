@@ -1,5 +1,5 @@
 import raggity.cli as cli_mod
-import raggity.answerer as answerer_mod
+import raggity.llm as llm_mod
 from typer.testing import CliRunner
 
 runner = CliRunner()
@@ -44,8 +44,8 @@ def test_ask_expand_flag(tmp_path, monkeypatch):
 
     async def _fake_query(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(answerer_mod, "query", _fake_query)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
 
     r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg, "--plain", "--expand"])
     assert r.exit_code == 0 and "NAS" in r.stdout
@@ -58,8 +58,8 @@ def test_ask_streams_by_default(tmp_path, monkeypatch):
     async def _fake_query(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
 
-    monkeypatch.setattr(answerer_mod, "query", _fake_query)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
     r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg])
     assert r.exit_code == 0 and "NAS" in r.stdout
 
@@ -71,8 +71,8 @@ def test_ask_plain(tmp_path, monkeypatch):
     async def _fake_query(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
 
-    monkeypatch.setattr(answerer_mod, "query", _fake_query)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
 
     r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg, "--plain"])
     assert r.exit_code == 0 and "NAS" in r.stdout
@@ -91,8 +91,8 @@ def test_ask_hyde_flag(tmp_path, monkeypatch):
 
     async def _fake_answer(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(answerer_mod, "query", _fake_answer)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    monkeypatch.setattr(llm_mod, "query", _fake_answer)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
 
     r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg,
                                     "--plain", "--hyde"])
@@ -112,8 +112,8 @@ def test_ask_decompose_flag(tmp_path, monkeypatch):
 
     async def _fake_answer(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(answerer_mod, "query", _fake_answer)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    monkeypatch.setattr(llm_mod, "query", _fake_answer)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
 
     r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg,
                                     "--plain", "--decompose"])
@@ -133,8 +133,8 @@ def test_ask_decompose_overrides_other_transforms(tmp_path, monkeypatch):
 
     async def _fake_answer(prompt, options):
         yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(answerer_mod, "query", _fake_answer)
-    monkeypatch.setattr(answerer_mod, "AssistantMessage", _AssistantMessage)
+    monkeypatch.setattr(llm_mod, "query", _fake_answer)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
 
     r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg,
                                     "--plain", "--decompose", "--expand"])
