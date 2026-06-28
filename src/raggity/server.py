@@ -1,11 +1,13 @@
 from __future__ import annotations
 import json
+import os
 import uuid
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
@@ -31,33 +33,67 @@ class ChatRequest(BaseModel):
 def create_app(cfg: RaggityConfig) -> FastAPI:
     state: dict = {}
 
+    # --- Resolve allowed keys: config + env (merged, deduped) ---
+    def _resolve_keys() -> frozenset[str]:
+        keys: list[str] = list(cfg.server.api_keys)
+        env_val = os.environ.get("RAGGITY_API_KEYS", "")
+        if env_val.strip():
+            keys.extend(k.strip() for k in env_val.split(",") if k.strip())
+        return frozenset(keys)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         state["rag"] = Raggity(cfg)
-        state["sessions"]: dict[str, Conversation] = {}
+        # Use OrderedDict for bounded LRU session store
+        state["sessions"]: OrderedDict[str, Conversation] = OrderedDict()
+        state["allowed_keys"] = _resolve_keys()
         yield
         state.clear()
 
     app = FastAPI(title="raggity", lifespan=lifespan)
 
+    # --- Auth dependency ---
+    async def require_auth(request: Request) -> None:
+        if cfg.server.auth == "none":
+            return
+        # auth == "api_key"
+        allowed: frozenset[str] = state["allowed_keys"]
+        # Check X-API-Key header
+        key = request.headers.get("X-API-Key")
+        if key and key in allowed:
+            return
+        # Check Authorization: Bearer <key>
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            bearer_key = auth_header[len("Bearer "):]
+            if bearer_key in allowed:
+                return
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
     def _get_or_create_session(session_id: str) -> Conversation:
-        sessions: dict[str, Conversation] = state["sessions"]
-        if session_id not in sessions:
+        sessions: OrderedDict[str, Conversation] = state["sessions"]
+        if session_id in sessions:
+            # Move to end (most recently used)
+            sessions.move_to_end(session_id)
+        else:
             sessions[session_id] = Conversation()
+            # Evict oldest if over capacity
+            if len(sessions) > cfg.server.max_sessions:
+                sessions.popitem(last=False)
         return sessions[session_id]
 
-    @app.post("/ingest")
+    @app.post("/ingest", dependencies=[Depends(require_auth)])
     async def ingest():
         rag: Raggity = state["rag"]
         report = await run_in_threadpool(rag.ingest)
         return {"added": report.added, "updated": report.updated,
                 "deleted": report.deleted, "unchanged": report.unchanged}
 
-    @app.get("/status")
+    @app.get("/status", dependencies=[Depends(require_auth)])
     async def status():
         return state["rag"].status()
 
-    @app.post("/ask")
+    @app.post("/ask", dependencies=[Depends(require_auth)])
     async def ask(req: AskRequest):
         rag: Raggity = state["rag"]
         if req.session_id is not None:
@@ -84,7 +120,7 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
             ],
         }
 
-    @app.post("/chat")
+    @app.post("/chat", dependencies=[Depends(require_auth)])
     async def chat(req: ChatRequest):
         rag: Raggity = state["rag"]
         session_id = req.session_id if req.session_id is not None else uuid.uuid4().hex
@@ -101,14 +137,14 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
             "session_id": session_id,
         }
 
-    @app.delete("/session/{session_id}", status_code=204)
+    @app.delete("/session/{session_id}", status_code=204, dependencies=[Depends(require_auth)])
     async def delete_session(session_id: str):
-        sessions: dict[str, Conversation] = state["sessions"]
+        sessions: OrderedDict[str, Conversation] = state["sessions"]
         if session_id not in sessions:
             raise HTTPException(status_code=404, detail="session not found")
         del sessions[session_id]
 
-    @app.get("/ask/stream")
+    @app.get("/ask/stream", dependencies=[Depends(require_auth)])
     async def ask_stream(question: str, session_id: str | None = None):
         rag: Raggity = state["rag"]
 
