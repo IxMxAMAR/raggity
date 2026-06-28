@@ -33,6 +33,7 @@ from .indexer import IngestReport, Indexer
 from .models import Answer, Document
 from .retriever import Retriever
 from .registry import resolve
+from .observability import init_tracing, span
 
 _GRAPH_JSON = "graph.json"
 
@@ -61,6 +62,8 @@ class Raggity:
                                    self.cfg.retrieval)
         self.provider = build_provider(self.cfg.generation)
         self.answerer = ProviderAnswerer(self.provider)
+        # Initialise tracing (no-op when observability.tracing=False)
+        init_tracing(self.cfg)
         # Graph store: lazy-load from disk when graph=true
         self._graph = None
         if self.cfg.retrieval.graph:
@@ -221,11 +224,13 @@ class Raggity:
                    use_cache: bool | None = None) -> Answer:
         queries = await self._build_queries(question, expand, hyde, step_back)
         graph_ids = await self._graph_neighborhood_ids(question)
-        if queries == [question] and not graph_ids:
-            chunks = self.retriever.retrieve(question)
-        else:
-            chunks = self.retriever.retrieve_multi(queries, question,
-                                                   graph_chunk_ids=graph_ids or None)
+        with span("retrieve", query=question, query_count=len(queries),
+                  graph_ids=len(graph_ids)):
+            if queries == [question] and not graph_ids:
+                chunks = self.retriever.retrieve(question)
+            else:
+                chunks = self.retriever.retrieve_multi(queries, question,
+                                                       graph_chunk_ids=graph_ids or None)
         use_cache = self.cfg.generation.cache if use_cache is None else use_cache
         key = None
         if use_cache:
@@ -234,7 +239,9 @@ class Raggity:
             key = _cache.cache_key(question, [c.chunk_id for c in chunks], self.cfg.generation.model)
             if key in data:
                 return _cache.answer_from_dict(data[key])
-        answer = await self.answerer.answer(question, chunks)
+        with span("generate", backend=self.cfg.generation.backend,
+                  model=self.cfg.generation.model, chunk_count=len(chunks)):
+            answer = await self.answerer.answer(question, chunks)
         if use_cache and key is not None:
             data[key] = _cache.answer_to_dict(answer)
             _cache.save(self._cache_path(), data)
