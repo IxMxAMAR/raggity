@@ -7,10 +7,9 @@ import os
 from pathlib import Path
 
 from .models import Document
+from .readers import SUPPORTED_EXTS, read_file
 
 log = logging.getLogger("raggity.loader")
-
-SUPPORTED = {".md", ".txt", ".pdf"}
 
 
 def compute_file_hash(path: str) -> str:
@@ -19,16 +18,6 @@ def compute_file_hash(path: str) -> str:
         for block in iter(lambda: fh.read(65536), b""):
             h.update(block)
     return h.hexdigest()
-
-
-def read_pdf(path: str) -> str:
-    from pypdf import PdfReader
-
-    reader = PdfReader(path)
-    parts = []
-    for page in reader.pages:
-        parts.append(page.extract_text() or "")
-    return "\n".join(parts)
 
 
 def _title_for(path: Path, text: str) -> str:
@@ -53,18 +42,15 @@ def load_documents(globs: list[str]) -> list[Document]:
         if not p.is_file():
             continue
         ext = p.suffix.lower()
-        if ext not in SUPPORTED:
+        if ext not in SUPPORTED_EXTS:
             log.warning("skipping unsupported file: %s", fp)
             continue
         try:
-            if ext == ".pdf":
-                text = read_pdf(fp)
-            else:
-                text = p.read_text(encoding="utf-8", errors="replace")
+            text = read_file(fp)
         except Exception as exc:  # encrypted/corrupt PDFs, perms, etc.
             log.warning("skipping unreadable file %s: %s", fp, exc)
             continue
-        if not text.strip():
+        if text is None or not text.strip():
             log.warning("skipping empty/no-text file: %s", fp)
             continue
         posix_path = p.as_posix()  # normalize to forward slashes cross-platform
