@@ -26,6 +26,33 @@ def ingest(config: str = typer.Option(None, "--config")):
     )
 
 
+@app.command(name="ingest-url")
+def ingest_url(
+    url: str = typer.Argument(..., help="URL to fetch and index."),
+    depth: int = typer.Option(0, "--depth", "-d", help="BFS crawl depth (0 = start URL only)."),
+    config: str = typer.Option(None, "--config"),
+):
+    """Fetch a URL (and optionally crawl same-domain links) and add to the index."""
+    try:
+        from .connectors.web import WebConnector  # noqa: PLC0415
+    except ImportError:
+        console.print("[red]ingest-url needs extra deps:[/red] pip install raggity[web]")
+        raise typer.Exit(1)
+    rag = _rag(config)
+    console.print(f"Fetching [cyan]{url}[/cyan] (depth={depth})…")
+    try:
+        connector = WebConnector(url, depth=depth, same_domain=True)
+        docs = connector.fetch()
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    if not docs:
+        console.print("[yellow]No content extracted.[/yellow]")
+        raise typer.Exit(0)
+    added = rag.ingest_documents(docs)
+    console.print(f"[green]Ingested {added} page(s) from {url}.[/green]")
+
+
 @app.command()
 def ask(question: str, config: str = typer.Option(None, "--config"),
         plain: bool = typer.Option(False, "--plain"),

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 class SourcesConfig(BaseModel):
     include: list[str] = Field(default_factory=list)
+    urls: list[str] = Field(default_factory=list)
 
 
 class EmbeddingConfig(BaseModel):
