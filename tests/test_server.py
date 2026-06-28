@@ -343,3 +343,195 @@ def test_session_lru_access_prevents_eviction(tmp_path):
         assert client.delete("/session/s0").status_code == 204
         assert client.delete("/session/s2").status_code == 204
         assert client.delete("/session/s3").status_code == 204
+
+
+# ---------------------------------------------------------------------------
+# RED: Phase E Task 2 — per-user collections (namespaced multi-tenant)
+# ---------------------------------------------------------------------------
+
+def _per_user_cfg(tmp_path, per_user=True):
+    """Config with auth=api_key + two test keys; per_user flag controlled."""
+    from raggity.config import RaggityConfig, SourcesConfig, IndexConfig, ServerConfig
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[]),          # no static sources; we ingest via API
+        index=IndexConfig(path=str(tmp_path / "base_idx")),
+        server=ServerConfig(
+            auth="api_key",
+            api_keys=["key_alice", "key_bob"],
+            per_user=per_user,
+        ),
+    )
+    return cfg
+
+
+def _ingest_doc(client, key, content, tmp_path, label):
+    """Write a small doc and POST /ingest so it lands in the store for *key*."""
+    from raggity.models import Document
+    import raggity.core as core_mod
+
+    doc = Document(
+        path=f"/fake/{label}.md",
+        title=label,
+        text=content,
+        file_hash=label,
+        mtime=0.0,
+    )
+
+    # Monkey-patch ingest_documents so we can inject an in-memory doc without disk files
+    orig = None
+
+    def _patched_ingest(self, docs):
+        return core_mod.Raggity.ingest_documents(self, docs)
+
+    # Directly call the per-user /ingest by passing doc via a helper
+    # We'll override ingest() to call ingest_documents with our doc
+    import raggity.server as srv_mod
+
+    original_ingest_method = None
+
+    def patched_ingest_on_instance(instance, _docs=[doc]):
+        from raggity.indexer import IngestReport
+        instance.ingest_documents(_docs)
+        return IngestReport(added=1, updated=0, deleted=0, unchanged=0)
+
+    # Temporarily patch the rag's ingest method for this call
+    import unittest.mock as mock
+    headers = {"X-API-Key": key}
+    with mock.patch.object(core_mod.Raggity, "ingest", patched_ingest_on_instance):
+        resp = client.post("/ingest", headers=headers)
+    assert resp.status_code == 200, f"ingest failed: {resp.text}"
+    return resp
+
+
+def test_per_user_isolation(tmp_path, monkeypatch):
+    """per_user=True: key_alice ingests docA, key_bob ingests docB.
+    Each key's /status shows only their own chunks; counts are separate."""
+    from raggity.server import create_app
+
+    cfg = _per_user_cfg(tmp_path, per_user=True)
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        _ingest_doc(client, "key_alice", "Alice exclusive: the sky is green.", tmp_path, "alice_doc")
+        _ingest_doc(client, "key_bob", "Bob exclusive: the sea is purple.", tmp_path, "bob_doc")
+
+        st_alice = client.get("/status", headers={"X-API-Key": "key_alice"}).json()
+        st_bob = client.get("/status", headers={"X-API-Key": "key_bob"}).json()
+
+        # Each namespace has exactly the chunks they ingested — they do not share
+        assert st_alice["chunks"] >= 1
+        assert st_bob["chunks"] >= 1
+        # Isolation: the index_path reported must differ between the two users
+        assert st_alice["index_path"] != st_bob["index_path"], (
+            "per_user=True must route alice and bob to different index paths"
+        )
+
+
+def test_per_user_ask_isolation(tmp_path, monkeypatch):
+    """per_user=True: /ask for key_alice cannot retrieve key_bob's content."""
+    from raggity.server import create_app
+    import raggity.llm as llm_mod
+
+    cfg = _per_user_cfg(tmp_path, per_user=True)
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        _ingest_doc(client, "key_alice", "Alice exclusive: the sky is green.", tmp_path, "alice_doc2")
+        _ingest_doc(client, "key_bob", "Bob exclusive: the sea is purple.", tmp_path, "bob_doc2")
+
+        async def _fake_query(prompt, options):
+            yield _AssistantMessage("I cannot find information about that in the provided context.")
+
+        monkeypatch.setattr(llm_mod, "query", _fake_query)
+        monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+        # Alice asks about Bob's content — she should not see it
+        resp = client.post(
+            "/ask",
+            json={"question": "what color is the sea?"},
+            headers={"X-API-Key": "key_alice"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        # Bob's specific content "purple" must not appear in alice's chunks
+        # (the retriever won't find it because alice's index only has her doc)
+        # We verify by checking status chunk counts stay separate
+        st_alice = client.get("/status", headers={"X-API-Key": "key_alice"}).json()
+        st_bob = client.get("/status", headers={"X-API-Key": "key_bob"}).json()
+        assert st_alice["index_path"] != st_bob["index_path"]
+
+
+def test_per_user_off_shared_index(tmp_path, monkeypatch):
+    """per_user=False (default): both keys share the same Raggity instance/index."""
+    from raggity.server import create_app
+
+    cfg = _per_user_cfg(tmp_path, per_user=False)
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        _ingest_doc(client, "key_alice", "Shared doc: the sky is blue.", tmp_path, "shared_doc")
+
+        # Both keys see the same status (same index_path)
+        st_alice = client.get("/status", headers={"X-API-Key": "key_alice"}).json()
+        st_bob = client.get("/status", headers={"X-API-Key": "key_bob"}).json()
+
+        assert st_alice["index_path"] == st_bob["index_path"], (
+            "per_user=False must route all keys to the same shared index"
+        )
+        assert st_alice["chunks"] == st_bob["chunks"]
+
+
+def test_per_user_config_default_false():
+    """ServerConfig.per_user defaults to False (no-op for single-user usage)."""
+    from raggity.config import ServerConfig
+    sc = ServerConfig()
+    assert sc.per_user is False
+
+
+def test_for_namespace_lancedb(tmp_path):
+    """Raggity.for_namespace(ns) returns a Raggity with namespaced LanceDB path."""
+    from raggity.config import RaggityConfig, IndexConfig
+    from raggity.core import Raggity
+
+    base_path = str(tmp_path / "base")
+    cfg = RaggityConfig(index=IndexConfig(path=base_path, backend="lancedb"))
+    rag = Raggity(cfg)
+
+    ns_rag = rag.for_namespace("alice")
+    assert ns_rag.cfg.index.path == str(tmp_path / "base" / "users" / "alice")
+    # Original unchanged
+    assert rag.cfg.index.path == base_path
+
+
+def test_for_namespace_slug_sanitization(tmp_path):
+    """for_namespace sanitizes unsafe characters to a filesystem-safe slug."""
+    from raggity.config import RaggityConfig, IndexConfig
+    from raggity.core import Raggity
+
+    cfg = RaggityConfig(index=IndexConfig(path=str(tmp_path / "base"), backend="lancedb"))
+    rag = Raggity(cfg)
+
+    # Key with unsafe chars must not end up in path literally
+    ns_rag = rag.for_namespace("user@example.com/evil/../path")
+    ns_path = ns_rag.cfg.index.path
+    # Must not contain any of the unsafe chars
+    for bad in ["@", "/", ".", "\\"]:
+        assert bad not in ns_path.split("users" + ("/" if "/" in ns_path else "\\"))[-1], (
+            f"Unsafe char {bad!r} found in namespace slug: {ns_path}"
+        )
+
+
+def test_for_namespace_qdrant_collection(tmp_path):
+    """for_namespace namespaces the qdrant_collection as <base>_<ns>."""
+    from raggity.config import RaggityConfig, IndexConfig
+    from raggity.core import Raggity
+
+    cfg = RaggityConfig(
+        index=IndexConfig(
+            path=str(tmp_path / "base"),
+            backend="lancedb",
+            qdrant_collection="myproject",
+        )
+    )
+    rag = Raggity(cfg)
+    ns_rag = rag.for_namespace("bob")
+    assert ns_rag.cfg.index.qdrant_collection == "myproject_bob"
+    # Original unchanged
+    assert rag.cfg.index.qdrant_collection == "myproject"

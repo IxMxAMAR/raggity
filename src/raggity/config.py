@@ -69,6 +69,9 @@ class ServerConfig(BaseModel):
     auth: str = "none"  # "none" | "api_key"
     api_keys: list[str] = Field(default_factory=list)
     max_sessions: int = 1000
+    # When True (requires auth="api_key"), each authenticated identity gets its
+    # own namespaced index (multi-tenant).  False (default) = single shared index.
+    per_user: bool = False
 
 
 class RaggityConfig(BaseModel):

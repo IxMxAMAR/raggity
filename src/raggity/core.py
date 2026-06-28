@@ -75,6 +75,37 @@ class Raggity:
     def from_config(cls, path: str | None = None) -> "Raggity":
         return cls(load_config(path))
 
+    @staticmethod
+    def _slug(ns: str) -> str:
+        """Return a filesystem/collection-safe slug for *ns*.
+
+        Keeps alphanumerics, hyphens, and underscores.  Any run of other
+        characters is replaced by an underscore.  If the result is empty or
+        longer than 64 chars the sha-8 hex of the original is used instead.
+        """
+        import hashlib
+        import re
+        slug = re.sub(r"[^A-Za-z0-9_-]+", "_", ns).strip("_")
+        if not slug or len(slug) > 64:
+            slug = hashlib.sha256(ns.encode()).hexdigest()[:8]
+        return slug
+
+    def for_namespace(self, ns: str) -> "Raggity":
+        """Return a *new* :class:`Raggity` whose index is namespaced for *ns*.
+
+        The returned instance uses a deep copy of this config with:
+        - ``index.path`` → ``<base>/users/<slug>``   (LanceDB)
+        - ``index.qdrant_collection`` → ``<base_collection>_<slug>``
+
+        The original instance (``self``) is never mutated.  Suitable for
+        per-user multi-tenancy in the server.
+        """
+        slug = self._slug(ns)
+        new_cfg = self.cfg.model_copy(deep=True)
+        new_cfg.index.path = os.path.join(self.cfg.index.path, "users", slug)
+        new_cfg.index.qdrant_collection = f"{self.cfg.index.qdrant_collection}_{slug}"
+        return Raggity(new_cfg)
+
     def _manifest_path(self) -> str:
         return os.path.join(self.cfg.index.path, "manifest.json")
 
