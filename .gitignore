@@ -13,3 +13,6 @@ test_output.txt
 
 # internal subagent-driven-development scratch
 .superpowers/
+
+# MkDocs generated site
+site/
