@@ -50,7 +50,6 @@ def test_core_ask_uses_pipeline(tmp_path, monkeypatch):
 
 def test_core_ask_hyde_routes_retrieve_multi(tmp_path, monkeypatch):
     """aask with hyde=True must call retrieve_multi (not retrieve) and return an answer."""
-    import raggity.query_transform as qt
     notes = tmp_path / "notes"; notes.mkdir()
     (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
     cfg = RaggityConfig(
@@ -58,16 +57,13 @@ def test_core_ask_hyde_routes_retrieve_multi(tmp_path, monkeypatch):
         index=IndexConfig(path=str(tmp_path / "idx")),
     )
 
-    # Mock qt.query to return a HyDE passage
-    async def _fake_qt(prompt, options):
-        yield _AssistantMessage("Backups are stored on a NAS device nightly.")
-    monkeypatch.setattr(qt, "query", _fake_qt)
-    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
-
-    # Mock llm query to return a final answer
-    async def _fake_answer(prompt, options):
-        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(llm_mod, "query", _fake_answer)
+    # Single mock handles both HyDE generation and final answer (via llm_mod.query)
+    async def _fake_query(prompt, options):
+        if "Question:" in prompt:
+            yield _AssistantMessage("Backups are stored on a NAS device nightly.")
+        else:
+            yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
     monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
 
     from raggity.core import Raggity
@@ -129,14 +125,13 @@ def test_aask_decompose_merges_and_answers(tmp_path, monkeypatch):
     (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
     cfg = RaggityConfig(sources=SourcesConfig(include=[str(notes / "*.md")]),
                         index=IndexConfig(path=str(tmp_path / "idx")))
-    import raggity.query_transform as qt
-    async def _decomp(prompt, options):
-        yield _AssistantMessage("how often?\nwhere stored?")
-    monkeypatch.setattr(qt, "query", _decomp)
-    monkeypatch.setattr(qt, "AssistantMessage", _AssistantMessage)
-    async def _ans(prompt, options):
-        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
-    monkeypatch.setattr(llm_mod, "query", _ans)
+    # All LLM calls (decompose + answer) go through llm_mod.query
+    async def _fake(prompt, options):
+        if "sub-questions" in prompt or "Question:" in prompt and "Give at most" in prompt:
+            yield _AssistantMessage("how often?\nwhere stored?")
+        else:
+            yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+    monkeypatch.setattr(llm_mod, "query", _fake)
     monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
     from raggity.core import Raggity
     rag = Raggity(cfg); rag.ingest()
