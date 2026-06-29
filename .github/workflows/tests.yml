@@ -9,8 +9,18 @@ jobs:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.13", "3.12", "3.11"]
+        include:
+          - python-version: "3.11"
+            extras: "server,qdrant,openai,web,docs,ocr,graph,otel,watch,dev"
+          - python-version: "3.12"
+            extras: "server,qdrant,openai,web,docs,ocr,graph,otel,watch,dev"
+          # Python 3.13: the `ocr` extra (rapidocr-onnxruntime) has no 3.13 wheels yet,
+          # so it is excluded here. The OCR code path is import-lazy and its tests mock
+          # the dependency, so the suite still runs fully on 3.13.
+          - python-version: "3.13"
+            extras: "server,qdrant,openai,web,docs,graph,otel,watch,dev"
 
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +40,7 @@ jobs:
             models-${{ matrix.python-version }}-
 
       - name: Install dependencies
-        run: pip install -e ".[server,qdrant,openai,web,docs,ocr,graph,otel,watch,dev]"
+        run: pip install -e ".[${{ matrix.extras }}]"
 
       - name: Run tests
         run: python -m pytest -q
