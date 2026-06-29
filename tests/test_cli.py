@@ -1,8 +1,55 @@
+import threading
 import raggity.cli as cli_mod
 import raggity.llm as llm_mod
 from typer.testing import CliRunner
 
 runner = CliRunner()
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: serve --open opens browser via a background timer (not immediately)
+# ---------------------------------------------------------------------------
+
+def test_serve_open_uses_timer_not_direct_call(monkeypatch):
+    """_open_browser_delayed schedules a Timer and does NOT call webbrowser.open inline."""
+    timers = []
+    opened = []
+
+    class FakeTimer:
+        def __init__(self, delay, fn, *a, args=(), kwargs=None, **kw):
+            timers.append((delay, fn))
+            self._fn = fn
+        def start(self):
+            pass  # don't actually fire
+
+    monkeypatch.setattr("threading.Timer", FakeTimer)
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+
+    # Import and call the helper introduced by the fix
+    from raggity.cli import _open_browser_delayed
+    _open_browser_delayed("http://127.0.0.1:8000", delay=1.0)
+
+    assert len(timers) == 1, "exactly one Timer should be scheduled"
+    assert timers[0][0] == 1.0, "delay should be 1.0s"
+    assert len(opened) == 0, "webbrowser.open should NOT be called synchronously"
+
+
+def test_serve_open_timer_is_daemon(monkeypatch):
+    """Timer started by _open_browser_delayed must set daemon=True before start."""
+    daemon_values = []
+
+    class TrackingTimer:
+        def __init__(self, delay, fn, *a, args=(), kwargs=None, **kw):
+            self.daemon = False
+        def start(self):
+            daemon_values.append(self.daemon)
+
+    monkeypatch.setattr("threading.Timer", TrackingTimer)
+    monkeypatch.setattr("webbrowser.open", lambda url: None)
+
+    from raggity.cli import _open_browser_delayed
+    _open_browser_delayed("http://127.0.0.1:8000", delay=1.5)
+    assert daemon_values == [True], "daemon must be True before start() is called"
 
 
 class _Block:

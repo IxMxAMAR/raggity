@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 import shutil
+import threading
 import typer
 from rich.console import Console
 
 from .config import load_config
-from .core import Raggity
+from .core import Raggity, _run_async
 from .evaluate import evaluate, load_golden
+
+
+def _open_browser_delayed(url: str, delay: float = 1.2) -> None:
+    """Schedule a background timer that opens *url* after *delay* seconds.
+
+    Opening from a timer (not inline) lets uvicorn finish binding before the
+    browser sends its first request, avoiding a connection-refused tab.
+    """
+    import webbrowser
+
+    t = threading.Timer(delay, webbrowser.open, args=(url,))
+    t.daemon = True
+    t.start()
 
 app = typer.Typer(help="raggity — local-first RAG over your notes, answered by Claude.")
 console = Console()
@@ -200,8 +214,6 @@ def chat(config: str = typer.Option(None, "--config")):
         if question.lower() in ("exit", "quit"):
             console.print("[dim]Bye![/dim]")
             break
-        import asyncio
-
         async def _stream_chat():
             # Build retrieval query from conversation history
             retrieval_q = conversation.retrieval_query(question)
@@ -221,7 +233,7 @@ def chat(config: str = typer.Option(None, "--config")):
             conversation.add("assistant", "".join(parts).strip())
             return final
 
-        answer = asyncio.run(_stream_chat())
+        answer = _run_async(_stream_chat())
         if answer is not None and answer.citations:
             seen: set[str] = set()
             footnotes = []
@@ -312,9 +324,8 @@ def serve(config: str = typer.Option(None, "--config"),
         console.print("[red]The server needs extra deps:[/red] pip install raggity[server]")
         raise typer.Exit(1)
     if open:
-        import webbrowser
         try:
-            webbrowser.open(f"http://{host}:{port}")
+            _open_browser_delayed(f"http://{host}:{port}", delay=1.2)
         except Exception:  # noqa: BLE001
             pass
     uvicorn.run(create_app(load_config(config)), host=host, port=port)

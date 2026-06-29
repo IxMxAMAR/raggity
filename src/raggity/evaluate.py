@@ -24,11 +24,25 @@ def load_golden(path: str) -> list[dict]:
     return rows
 
 
+_REQUIRED_KEYS = {"question"}
+
+
+def _validate_row(row: dict, idx: int) -> None:
+    """Raise ValueError with row index if a required key is missing."""
+    missing = _REQUIRED_KEYS - row.keys()
+    if missing:
+        raise ValueError(
+            f"Golden row {idx} is missing required field(s): {sorted(missing)}. "
+            f"Got keys: {sorted(row.keys())}"
+        )
+
+
 def evaluate(retriever, golden: list[dict], k: int = 5) -> EvalResult:
     hits = 0.0
     mrr_total = 0.0
     recall_total = 0.0
-    for row in golden:
+    for idx, row in enumerate(golden):
+        _validate_row(row, idx)
         gold = set(row.get("relevant_source_paths", []))
         retrieved = retriever.retrieve(row["question"])[:k]
         paths = [c.source_path for c in retrieved]
@@ -80,7 +94,8 @@ async def llm_judge(rag, golden: list[dict], provider: LLMProvider) -> JudgeResu
     f_total = 0.0
     r_total = 0.0
     n = 0
-    for row in golden:
+    for idx, row in enumerate(golden):
+        _validate_row(row, idx)
         q = row["question"]
         chunks = rag.retriever.retrieve(q)
         answer = await rag.answerer.answer(q, chunks)

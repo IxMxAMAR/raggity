@@ -27,4 +27,11 @@ def resolve(role: str, name: str) -> type:
             f"The {role} backend {name!r} needs an optional dependency. "
             f"Try: pip install raggity[{name}]"
         ) from exc
-    return getattr(module, attr)
+    try:
+        return getattr(module, attr)
+    except AttributeError as exc:
+        raise BackendNotFound(
+            f"The {role} backend {name!r} registered class {attr!r} was not found "
+            f"in module {module_path!r}. The package may need updating: "
+            f"pip install -U raggity[{name}]"
+        ) from exc
