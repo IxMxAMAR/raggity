@@ -237,7 +237,30 @@ def test_obsidian_document_path_is_absolute(tmp_path):
     from raggity.connectors.obsidian import ObsidianConnector
     (tmp_path / "note.md").write_text("content")
     docs = ObsidianConnector(str(tmp_path)).fetch()
-    assert docs and str(tmp_path) in docs[0].path
+    # Path is POSIX (forward slashes); compare using as_posix() of tmp_path
+    assert docs and tmp_path.as_posix() in docs[0].path
+
+
+def test_obsidian_path_uses_forward_slashes(tmp_path):
+    """Document path must use POSIX forward slashes, not Windows backslashes."""
+    from raggity.connectors.obsidian import ObsidianConnector
+    (tmp_path / "note.md").write_text("# Note\n\nSome content.")
+    docs = ObsidianConnector(str(tmp_path)).fetch()
+    assert docs
+    assert "\\" not in docs[0].path
+
+
+def test_obsidian_hash_matches_raw_bytes(tmp_path):
+    """file_hash must equal sha256 of raw file bytes (matching loader.compute_file_hash)."""
+    import hashlib
+    from raggity.connectors.obsidian import ObsidianConnector
+    raw_bytes = "# Note\n\nContent with [[wikilink]] here.".encode("utf-8")
+    note_path = tmp_path / "note.md"
+    note_path.write_bytes(raw_bytes)
+    docs = ObsidianConnector(str(tmp_path)).fetch()
+    assert docs
+    expected = hashlib.sha256(raw_bytes).hexdigest()
+    assert docs[0].file_hash == expected
 
 
 def test_obsidian_registry_resolves():
@@ -281,6 +304,76 @@ def test_github_connector_skips_unsupported_files(tmp_path, monkeypatch):
     paths = [d.path for d in docs]
     assert any("README.md" in p for p in paths)
     assert not any(".bin" in p for p in paths)
+
+
+def test_github_sha_ref_uses_fetch_checkout_not_branch_flag(monkeypatch):
+    """A 40-hex SHA ref must use _clone_ref_sha (fetch+checkout), NOT _clone_ref (--branch)."""
+    import raggity.connectors.github as g
+
+    calls = []
+
+    def fake_clone_ref(url, ref, dest):
+        calls.append(("clone_ref", ref))
+
+    def fake_clone_sha(url, sha, dest):
+        calls.append(("clone_sha", sha))
+        from pathlib import Path
+        (Path(dest) / "README.md").write_text("sha content")
+
+    monkeypatch.setattr(g, "_clone_ref", fake_clone_ref)
+    monkeypatch.setattr(g, "_clone_ref_sha", fake_clone_sha)
+
+    sha = "a" * 40
+    g.GitHubConnector("https://github.com/x/y", ref=sha).fetch()
+    assert any(c[0] == "clone_sha" for c in calls), f"Expected clone_sha, got: {calls}"
+    assert all(c[0] != "clone_ref" for c in calls), f"clone_ref called for SHA: {calls}"
+
+
+def test_github_branch_ref_uses_clone_ref_not_sha_path(monkeypatch):
+    """A branch/tag ref (not a 40-hex SHA) must use _clone_ref, not _clone_ref_sha."""
+    import raggity.connectors.github as g
+
+    calls = []
+
+    def fake_clone_ref(url, ref, dest):
+        calls.append(("clone_ref", ref))
+        from pathlib import Path
+        (Path(dest) / "README.md").write_text("branch content")
+
+    def fake_clone_sha(url, sha, dest):
+        calls.append(("clone_sha", sha))
+
+    monkeypatch.setattr(g, "_clone_ref", fake_clone_ref)
+    monkeypatch.setattr(g, "_clone_ref_sha", fake_clone_sha)
+
+    g.GitHubConnector("https://github.com/x/y", ref="main").fetch()
+    assert any(c[0] == "clone_ref" for c in calls)
+    assert all(c[0] != "clone_sha" for c in calls)
+
+
+def test_github_file_hash_uses_raw_bytes(tmp_path, monkeypatch):
+    """file_hash must equal sha256 of raw file bytes (matching loader.compute_file_hash).
+
+    We verify by patching the clone to write known bytes, then comparing
+    the Document's file_hash against sha256(raw_bytes).  This is the same
+    convention as loader.compute_file_hash which opens in 'rb' mode.
+    """
+    import hashlib
+    import raggity.connectors.github as g
+
+    # Pure UTF-8 content — hash(raw_bytes) is the expected convention.
+    raw_bytes = b"# Repo\n\nproject docs here"
+
+    def fake_clone(url, dest):
+        from pathlib import Path
+        (Path(dest) / "README.md").write_bytes(raw_bytes)
+
+    monkeypatch.setattr(g, "_clone", fake_clone)
+    docs = g.GitHubConnector("https://github.com/x/y").fetch()
+    assert docs
+    # Convention: hash the raw file bytes, NOT the decoded-then-re-encoded text.
+    expected = hashlib.sha256(raw_bytes).hexdigest()
+    assert docs[0].file_hash == expected
 
 
 def test_github_registry_resolves():
@@ -342,6 +435,57 @@ def test_cli_ingest_obsidian(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+
+def test_web_connector_max_pages_limits_crawl(monkeypatch):
+    """BFS crawl must stop enqueuing once max_pages visited URLs is reached."""
+    import raggity.connectors.web as w
+
+    # Create a link graph: /start → /p1 → /p2 → /p3 → /p4 → /p5 (6 pages total)
+    def make_page(next_url=None):
+        link = f"<a href='{next_url}'>next</a>" if next_url else ""
+        return f"<html><p>body</p>{link}</html>"
+
+    pages = {
+        "https://example.com/start": make_page("https://example.com/p1"),
+        "https://example.com/p1": make_page("https://example.com/p2"),
+        "https://example.com/p2": make_page("https://example.com/p3"),
+        "https://example.com/p3": make_page("https://example.com/p4"),
+        "https://example.com/p4": make_page("https://example.com/p5"),
+        "https://example.com/p5": make_page(),
+    }
+    monkeypatch.setattr(w, "_fetch", lambda url: pages.get(url, "<html><p>empty</p></html>"))
+    monkeypatch.setattr(w, "_extract", lambda html, url: ("T", f"body {url}"))
+
+    # With max_pages=3 and depth=10, crawl should stop after 3 pages
+    docs = w.WebConnector("https://example.com/start", depth=10, max_pages=3).fetch()
+    assert len(docs) == 3
+
+
+def test_web_connector_max_pages_default_allows_normal_crawl(monkeypatch):
+    """Default max_pages must not block small crawls."""
+    import raggity.connectors.web as w
+
+    pages = {
+        "https://example.com/a": "<html><a href='https://example.com/b'>b</a><p>body a</p></html>",
+        "https://example.com/b": "<html><p>body b</p></html>",
+    }
+    monkeypatch.setattr(w, "_fetch", lambda url: pages.get(url, "<html><p>empty</p></html>"))
+    monkeypatch.setattr(w, "_extract", lambda html, url: ("T", f"body {url}"))
+
+    docs = w.WebConnector("https://example.com/a", depth=1).fetch()
+    assert len(docs) == 2
+
+
+def test_web_connector_depth0_ignores_max_pages(monkeypatch):
+    """depth=0 single-fetch behavior must be unchanged regardless of max_pages."""
+    import raggity.connectors.web as w
+
+    monkeypatch.setattr(w, "_fetch", lambda url: "<html><a href='https://example.com/b'>b</a><p>body</p></html>")
+    monkeypatch.setattr(w, "_extract", lambda html, url: ("T", "body"))
+
+    docs = w.WebConnector("https://example.com/a", depth=0, max_pages=1).fetch()
+    assert len(docs) == 1
+
 
 def test_ingest_calls_web_connector_for_urls(tmp_path, monkeypatch):
     """Raggity.ingest() fetches each sources.urls entry via WebConnector."""

@@ -7,12 +7,18 @@ Requires the ``raggity[web]`` extra::
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections import deque
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
 from . import Connector
 from ..models import Document
+
+log = logging.getLogger("raggity.connectors.web")
+
+# Default upper bound on pages fetched in a single WebConnector.fetch() call.
+_DEFAULT_MAX_PAGES = 200
 
 
 # ---------------------------------------------------------------------------
@@ -101,12 +107,21 @@ class WebConnector(Connector):
     same_domain:
         When ``True`` (default) restrict BFS to URLs on the same host as
         *url*.
+    max_pages:
+        Maximum number of pages to fetch during BFS.  Defaults to
+        :data:`_DEFAULT_MAX_PAGES` (200).  The crawl stops enqueuing new
+        URLs once this many pages have been visited.  ``depth=0`` always
+        fetches exactly one page regardless of ``max_pages``.
+        Note: robots.txt compliance and rate limiting are not yet
+        implemented — these are future work.
     """
 
-    def __init__(self, url: str, depth: int = 0, same_domain: bool = True) -> None:
+    def __init__(self, url: str, depth: int = 0, same_domain: bool = True,
+                 max_pages: int = _DEFAULT_MAX_PAGES) -> None:
         self.url = url
         self.depth = depth
         self.same_domain = same_domain
+        self.max_pages = max_pages
 
     def fetch(self) -> list[Document]:
         docs: list[Document] = []
@@ -118,6 +133,14 @@ class WebConnector(Connector):
             current_url, current_depth = queue.popleft()
             if current_url in visited:
                 continue
+            # Stop fetching new pages once the cap is reached.
+            if len(visited) >= self.max_pages:
+                log.warning(
+                    "raggity.connectors.web: max_pages=%d reached; "
+                    "stopping crawl (remaining queue size: %d).",
+                    self.max_pages, len(queue) + 1,
+                )
+                break
             visited.add(current_url)
 
             html = _fetch(current_url)

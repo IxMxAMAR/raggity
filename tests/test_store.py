@@ -120,3 +120,35 @@ def test_get_by_chunk_ids_missing(tmp_path, emb):
     s.upsert([_chunk("c1", "alpha")], emb)
     got = s.get_by_chunk_ids(["nonexistent"])
     assert got == []
+
+
+# ---------------------------------------------------------------------------
+# list_tables version-guard tests
+# ---------------------------------------------------------------------------
+
+def test_list_table_names_plain_list(tmp_path, emb, monkeypatch):
+    """_list_table_names works when list_tables() returns a plain list."""
+    from raggity.store import _list_table_names
+    s = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    monkeypatch.setattr(s._db, "list_tables", lambda: ["chunks", "other"])
+    assert "chunks" in _list_table_names(s._db)
+
+
+def test_list_table_names_object_with_tables_attr(tmp_path, emb, monkeypatch):
+    """_list_table_names works when list_tables() returns an object with .tables."""
+    from raggity.store import _list_table_names
+
+    class _FakeResult:
+        tables = ["chunks", "other"]
+
+    s = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    monkeypatch.setattr(s._db, "list_tables", lambda: _FakeResult())
+    assert "chunks" in _list_table_names(s._db)
+
+
+def test_reset_uses_list_table_names(tmp_path, emb):
+    """reset() must not raise regardless of list_tables() return shape."""
+    s = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    s.upsert([_chunk("c1", "alpha")], emb)
+    s.reset()
+    assert s.count() == 0

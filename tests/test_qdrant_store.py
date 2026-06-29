@@ -89,3 +89,17 @@ def test_get_by_chunk_ids_missing(emb):
     s = _store(emb.dim)
     s.upsert([_chunk("c1", "alpha")], emb)
     assert s.get_by_chunk_ids(["nonexistent"]) == []
+
+
+def test_local_memory_indexes_text_search_and_delete(emb):
+    """Indexes are created for :memory: stores; text_search and delete_source use them."""
+    s = _store(emb.dim)
+    s.upsert([_chunk("c1", "API key was rotated on 2026", src="a.md"),
+              _chunk("c2", "unrelated sentence", src="b.md", ordinal=1)], emb)
+    # text_search should return c1 for "API key"
+    res = s.text_search("API key", limit=5)
+    assert any(c.chunk_id == "c1" for c in res)
+    # delete_source should remove only b.md
+    s.delete_source("b.md")
+    assert s.all_source_paths() == {"a.md"}
+    assert s.count() == 1
