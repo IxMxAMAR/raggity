@@ -72,6 +72,9 @@ class ServerConfig(BaseModel):
     # When True (requires auth="api_key"), each authenticated identity gets its
     # own namespaced index (multi-tenant).  False (default) = single shared index.
     per_user: bool = False
+    # Bound on the per-identity Raggity LRU cache (multi-tenant only).  When the
+    # cache exceeds this, the least-recently-used Raggity is evicted and closed.
+    max_user_rags: int = 128
 
 
 class ObservabilityConfig(BaseModel):

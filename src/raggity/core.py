@@ -243,10 +243,11 @@ class Raggity:
         with span("retrieve", query=question, query_count=len(queries),
                   graph_ids=len(graph_ids)):
             if queries == [question] and not graph_ids:
-                chunks = self.retriever.retrieve(question)
+                chunks = await asyncio.to_thread(self.retriever.retrieve, question)
             else:
-                chunks = self.retriever.retrieve_multi(queries, question,
-                                                       graph_chunk_ids=graph_ids or None)
+                chunks = await asyncio.to_thread(
+                    self.retriever.retrieve_multi, queries, question,
+                    graph_chunk_ids=graph_ids or None)
         use_cache = self.cfg.generation.cache if use_cache is None else use_cache
         if use_cache:
             from . import cache as _cache
@@ -282,7 +283,7 @@ class Raggity:
         subs = await decompose_question(question, self.cfg.retrieval.expand_n, self.provider)
         merged: dict[str, object] = {}
         for q in [question] + subs:
-            for c in self.retriever.retrieve(q):
+            for c in await asyncio.to_thread(self.retriever.retrieve, q):
                 merged.setdefault(c.chunk_id, c)
         pool = list(merged.values())[: self.cfg.retrieval.top_k * 2]
         # Apply reranker (if configured) then lost-in-middle ordering on merged pool.
@@ -298,10 +299,11 @@ class Raggity:
         queries = await self._build_queries(question, expand, hyde, step_back)
         graph_ids = await self._graph_neighborhood_ids(question)
         if queries == [question] and not graph_ids:
-            chunks = self.retriever.retrieve(question)
+            chunks = await asyncio.to_thread(self.retriever.retrieve, question)
         else:
-            chunks = self.retriever.retrieve_multi(queries, question,
-                                                   graph_chunk_ids=graph_ids or None)
+            chunks = await asyncio.to_thread(
+                self.retriever.retrieve_multi, queries, question,
+                graph_chunk_ids=graph_ids or None)
         async for piece in self.answerer.answer_stream(question, chunks):
             yield piece
 
@@ -313,10 +315,11 @@ class Raggity:
         retrieval_q = conversation.retrieval_query(question)
         graph_ids = await self._graph_neighborhood_ids(retrieval_q)
         if graph_ids:
-            chunks = self.retriever.retrieve_multi([retrieval_q], retrieval_q,
-                                                   graph_chunk_ids=graph_ids)
+            chunks = await asyncio.to_thread(
+                self.retriever.retrieve_multi, [retrieval_q], retrieval_q,
+                graph_chunk_ids=graph_ids)
         else:
-            chunks = self.retriever.retrieve(retrieval_q)
+            chunks = await asyncio.to_thread(self.retriever.retrieve, retrieval_q)
         history = conversation.recent(6)
         answer = await self.answerer.answer(question, chunks, history=history or None)
         conversation.add("user", question)
@@ -334,3 +337,33 @@ class Raggity:
             "index_path": self.cfg.index.path,
             "model": self.cfg.generation.model,
         }
+
+    async def close(self) -> None:
+        """Release underlying resources (provider connection + store handle).
+
+        Best-effort: the LLM provider's ``aclose()`` is awaited, and the store is
+        closed if it exposes ``close``/``aclose``/``__exit__``.  Some stores
+        (LanceDB/Qdrant local) hold no closeable handle — that is fine.
+        """
+        provider = getattr(self, "provider", None)
+        if provider is not None:
+            try:
+                await provider.aclose()
+            except Exception:
+                pass
+        store = getattr(self, "store", None)
+        if store is not None:
+            try:
+                aclose = getattr(store, "aclose", None)
+                if aclose is not None:
+                    await aclose()
+                else:
+                    close = getattr(store, "close", None)
+                    if close is not None:
+                        close()
+                    else:
+                        exit_ = getattr(store, "__exit__", None)
+                        if exit_ is not None:
+                            exit_(None, None, None)
+            except Exception:
+                pass

@@ -535,3 +535,209 @@ def test_for_namespace_qdrant_collection(tmp_path):
     assert ns_rag.cfg.index.qdrant_collection == "myproject_bob"
     # Original unchanged
     assert rag.cfg.index.qdrant_collection == "myproject"
+
+
+# ---------------------------------------------------------------------------
+# RED: Group 4 — server security + multi-tenant
+# ---------------------------------------------------------------------------
+
+
+def _fix_query(monkeypatch, text="Backups run nightly to the NAS [doc_1#00000000]."):
+    async def _fake_query(prompt, options):
+        yield _AssistantMessage(text)
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+
+# --- Fix 1: per-identity session isolation -------------------------------
+
+def test_session_isolated_by_identity(tmp_path, monkeypatch):
+    """auth=api_key: key A creates session s1; key B using session_id=s1 does NOT
+    see A's session and gets/creates its own."""
+    from raggity.server import create_app
+    cfg = _auth_cfg(tmp_path, auth="api_key", api_keys=["A", "B"])
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        client.post("/ingest", headers={"X-API-Key": "A"})
+        _fix_query(monkeypatch)
+        # A creates session s1 via /chat
+        r = client.post("/chat", json={"question": "q", "session_id": "s1"},
+                        headers={"X-API-Key": "A"})
+        assert r.status_code == 200
+        # B uses session_id s1 via /ask — must not error, and must be B's own namespace
+        rb = client.post("/ask", json={"question": "q", "session_id": "s1"},
+                         headers={"X-API-Key": "B"})
+        assert rb.status_code == 200
+        # B cannot delete A's session: B's DELETE /session/s1 removes only B's.
+        # A's session must survive.
+        assert client.delete("/session/s1", headers={"X-API-Key": "B"}).status_code == 204
+        # A still has s1
+        assert client.delete("/session/s1", headers={"X-API-Key": "A"}).status_code == 204
+
+
+def test_delete_session_cannot_probe_other_identity(tmp_path, monkeypatch):
+    """B's DELETE for a session id it never created returns 404 even if A owns it."""
+    from raggity.server import create_app
+    cfg = _auth_cfg(tmp_path, auth="api_key", api_keys=["A", "B"])
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        client.post("/ingest", headers={"X-API-Key": "A"})
+        _fix_query(monkeypatch)
+        client.post("/chat", json={"question": "q", "session_id": "shared_id"},
+                    headers={"X-API-Key": "A"})
+        # B never created shared_id -> 404 (cannot delete or probe A's)
+        assert client.delete("/session/shared_id", headers={"X-API-Key": "B"}).status_code == 404
+        # A's still alive
+        assert client.delete("/session/shared_id", headers={"X-API-Key": "A"}).status_code == 204
+
+
+def test_session_namespace_auth_none_unchanged(tmp_path, monkeypatch):
+    """auth=none: shared session namespace (identity=None), same as before."""
+    from raggity.server import create_app
+    cfg = _auth_cfg(tmp_path, auth="none")
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        client.post("/ingest")
+        _fix_query(monkeypatch)
+        client.post("/chat", json={"question": "q", "session_id": "s1"})
+        # Same client (no identity) can delete it
+        assert client.delete("/session/s1").status_code == 204
+        assert client.delete("/session/s1").status_code == 404
+
+
+# --- Fix 2: bounded + closed user_rags -----------------------------------
+
+def test_user_rags_bounded_lru_evicts_and_closes(tmp_path, monkeypatch):
+    """user_rags is capped at max_user_rags; oldest evicted and its close() awaited."""
+    from raggity.server import create_app
+    from raggity.config import RaggityConfig, SourcesConfig, IndexConfig, ServerConfig
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[]),
+        index=IndexConfig(path=str(tmp_path / "base")),
+        server=ServerConfig(auth="api_key",
+                            api_keys=["k0", "k1", "k2"],
+                            per_user=True,
+                            max_user_rags=2),
+    )
+    app = create_app(cfg)
+
+    closed = []
+    import raggity.core as core_mod
+    orig_close = core_mod.Raggity.close
+
+    async def _spy_close(self):
+        closed.append(self.cfg.index.path)
+        return await orig_close(self)
+    monkeypatch.setattr(core_mod.Raggity, "close", _spy_close)
+
+    with TestClient(app) as client:
+        for k in ("k0", "k1", "k2"):
+            assert client.get("/status", headers={"X-API-Key": k}).status_code == 200
+        user_rags = app.state.raggity_state["user_rags"]
+        assert len(user_rags) == 2  # capped at max_user_rags
+        # k0 (oldest) should have been evicted from the cache
+        assert "k0" not in user_rags
+        assert "k1" in user_rags and "k2" in user_rags
+        # The evicted k0 rag had close() awaited (path contains its slug)
+        assert any(p.endswith("k0") for p in closed)
+
+
+def test_lifespan_teardown_closes_all(tmp_path, monkeypatch):
+    """On lifespan exit, base rag + cached user rags get close() awaited."""
+    from raggity.server import create_app
+    from raggity.config import RaggityConfig, SourcesConfig, IndexConfig, ServerConfig
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[]),
+        index=IndexConfig(path=str(tmp_path / "base")),
+        server=ServerConfig(auth="api_key", api_keys=["k0"], per_user=True),
+    )
+    app = create_app(cfg)
+
+    closed = []
+    import raggity.core as core_mod
+    orig_close = core_mod.Raggity.close
+
+    async def _spy_close(self):
+        closed.append(self.cfg.index.path)
+        return await orig_close(self)
+    monkeypatch.setattr(core_mod.Raggity, "close", _spy_close)
+
+    with TestClient(app) as client:
+        client.get("/status", headers={"X-API-Key": "k0"})
+    # After context exit, both base + user rag closed
+    assert len(closed) >= 2
+
+
+# --- Fix 3: per-tenant ingest content -------------------------------------
+
+def test_ingest_content_per_tenant_isolation(tmp_path, monkeypatch):
+    """per_user on: A and B POST /ingest/content; each /ask sees only its own."""
+    from raggity.server import create_app
+    cfg = _per_user_cfg(tmp_path, per_user=True)
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        ra = client.post("/ingest/content",
+                         json={"documents": [{"path": "/a.md", "text": "Alice: sky is green.", "title": "a"}]},
+                         headers={"X-API-Key": "key_alice"})
+        assert ra.status_code == 200
+        assert ra.json()["ingested"] == 1
+        rb = client.post("/ingest/content",
+                         json={"documents": [{"path": "/b.md", "text": "Bob: sea is purple.", "title": "b"}]},
+                         headers={"X-API-Key": "key_bob"})
+        assert rb.json()["ingested"] == 1
+
+        st_alice = client.get("/status", headers={"X-API-Key": "key_alice"}).json()
+        st_bob = client.get("/status", headers={"X-API-Key": "key_bob"}).json()
+        assert st_alice["chunks"] >= 1
+        assert st_bob["chunks"] >= 1
+        assert st_alice["index_path"] != st_bob["index_path"]
+
+
+def test_ingest_content_single_tenant(tmp_path):
+    """per_user off: /ingest/content ingests into the base rag."""
+    from raggity.server import create_app
+    cfg = _auth_cfg(tmp_path, auth="none")
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        r = client.post("/ingest/content",
+                        json={"documents": [{"path": "/x.md", "text": "hello world there"}]})
+        assert r.status_code == 200
+        assert r.json()["ingested"] == 1
+        assert client.get("/status").json()["chunks"] >= 1
+
+
+def test_ingest_content_requires_auth(tmp_path):
+    """/ingest/content is behind require_auth."""
+    from raggity.server import create_app
+    cfg = _auth_cfg(tmp_path, auth="api_key", api_keys=["secret123"])
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        r = client.post("/ingest/content",
+                        json={"documents": [{"path": "/x.md", "text": "hi"}]})
+        assert r.status_code == 401
+
+
+# --- Fix 5: SSE error handling -------------------------------------------
+
+def test_sse_stream_error_no_traceback(tmp_path, monkeypatch):
+    """If the rag raises mid-stream, response emits a generic event: error with no internals."""
+    from raggity.server import create_app
+    import raggity.core as core_mod
+    cfg = _cfg(tmp_path)
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        client.post("/ingest")
+
+        async def _boom(self, question, *a, **k):
+            raise RuntimeError("SECRET-INTERNAL-DETAIL")
+            yield  # pragma: no cover
+
+        monkeypatch.setattr(core_mod.Raggity, "aask_stream", _boom)
+
+        with client.stream("GET", "/ask/stream",
+                           params={"question": "boom?"}) as resp:
+            assert resp.status_code == 200
+            body = "".join(resp.iter_text())
+        assert "event: error" in body
+        assert "SECRET-INTERNAL-DETAIL" not in body
+        assert "Traceback" not in body
