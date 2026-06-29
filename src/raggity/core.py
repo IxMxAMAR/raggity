@@ -10,6 +10,8 @@ def _run_async(coro):
     - Outside a loop (normal CLI / sync usage): ``asyncio.run()``.
     - Inside a running loop (pytest-asyncio, Jupyter): run in a new thread so
       the coroutine gets its own fresh event loop without deadlocking the outer one.
+
+    Returns the coroutine's return value in both cases.
     """
     try:
         loop = asyncio.get_running_loop()
@@ -19,9 +21,9 @@ def _run_async(coro):
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(asyncio.run, coro)
-            future.result()  # propagate exceptions
+            return future.result()  # propagate exceptions + return value
     else:
-        asyncio.run(coro)
+        return asyncio.run(coro)
 
 
 from .answerer import ProviderAnswerer
@@ -64,6 +66,8 @@ class Raggity:
         self.answerer = ProviderAnswerer(self.provider)
         # Initialise tracing (no-op when observability.tracing=False)
         init_tracing(self.cfg)
+        # Lock for concurrent answer-cache load→mutate→save cycle
+        self._cache_lock: asyncio.Lock | None = None
         # Graph store: lazy-load from disk when graph=true
         self._graph = None
         if self.cfg.retrieval.graph:
@@ -196,28 +200,40 @@ class Raggity:
         return list(ids)
 
     async def _build_queries(self, question: str, expand, hyde, step_back) -> list[str]:
+        import logging as _logging
+        _log = _logging.getLogger("raggity.core")
         rc = self.cfg.retrieval
         use_expand = rc.expand if expand is None else expand
         use_hyde = rc.hyde if hyde is None else hyde
         use_step = rc.step_back if step_back is None else step_back
         if use_expand:
             from .query_transform import generate_query_variations
-            queries = await generate_query_variations(question, rc.expand_n, self.provider)
+            try:
+                queries = await generate_query_variations(question, rc.expand_n, self.provider)
+            except Exception as exc:
+                _log.warning("query expand failed, falling back to base query: %s", exc)
+                queries = [question]
         else:
             queries = [question]
         if use_hyde:
             from .query_transform import generate_hyde_document
-            queries.append(await generate_hyde_document(question, self.provider))
+            try:
+                queries.append(await generate_hyde_document(question, self.provider))
+            except Exception as exc:
+                _log.warning("HyDE generation failed, skipping: %s", exc)
         if use_step:
             from .query_transform import generate_step_back_question
-            queries.append(await generate_step_back_question(question, self.provider))
+            try:
+                queries.append(await generate_step_back_question(question, self.provider))
+            except Exception as exc:
+                _log.warning("step_back generation failed, skipping: %s", exc)
         return queries
 
     def ask(self, question: str, expand: bool | None = None,
             hyde: bool | None = None, step_back: bool | None = None,
             use_cache: bool | None = None) -> Answer:
-        return asyncio.run(self.aask(question, expand=expand, hyde=hyde,
-                                     step_back=step_back, use_cache=use_cache))
+        return _run_async(self.aask(question, expand=expand, hyde=hyde,
+                                    step_back=step_back, use_cache=use_cache))
 
     async def aask(self, question: str, expand: bool | None = None,
                    hyde: bool | None = None, step_back: bool | None = None,
@@ -232,32 +248,47 @@ class Raggity:
                 chunks = self.retriever.retrieve_multi(queries, question,
                                                        graph_chunk_ids=graph_ids or None)
         use_cache = self.cfg.generation.cache if use_cache is None else use_cache
-        key = None
         if use_cache:
             from . import cache as _cache
-            data = _cache.load(self._cache_path())
-            key = _cache.cache_key(question, [c.chunk_id for c in chunks], self.cfg.generation.model)
-            if key in data:
-                return _cache.answer_from_dict(data[key])
+            from .prompts import SYSTEM_PROMPT as _SYSTEM_PROMPT
+            # Lazy-create the lock inside the running loop
+            if self._cache_lock is None:
+                self._cache_lock = asyncio.Lock()
+            key = _cache.cache_key(
+                question, [c.chunk_id for c in chunks],
+                self.cfg.generation.model, system_prompt=_SYSTEM_PROMPT,
+            )
+            async with self._cache_lock:
+                data = _cache.load(self._cache_path())
+                if key in data:
+                    return _cache.answer_from_dict(data[key])
+                with span("generate", backend=self.cfg.generation.backend,
+                          model=self.cfg.generation.model, chunk_count=len(chunks)):
+                    answer = await self.answerer.answer(question, chunks)
+                data[key] = _cache.answer_to_dict(answer)
+                _cache.save(self._cache_path(), data)
+            return answer
         with span("generate", backend=self.cfg.generation.backend,
                   model=self.cfg.generation.model, chunk_count=len(chunks)):
             answer = await self.answerer.answer(question, chunks)
-        if use_cache and key is not None:
-            data[key] = _cache.answer_to_dict(answer)
-            _cache.save(self._cache_path(), data)
         return answer
 
     def ask_decompose(self, question: str) -> Answer:
-        return asyncio.run(self.aask_decompose(question))
+        return _run_async(self.aask_decompose(question))
 
     async def aask_decompose(self, question: str) -> Answer:
         from .query_transform import decompose_question
+        from .retriever import order_lost_in_middle
         subs = await decompose_question(question, self.cfg.retrieval.expand_n, self.provider)
         merged: dict[str, object] = {}
         for q in [question] + subs:
             for c in self.retriever.retrieve(q):
                 merged.setdefault(c.chunk_id, c)
-        chunks = list(merged.values())[: self.cfg.retrieval.top_k * 2]
+        pool = list(merged.values())[: self.cfg.retrieval.top_k * 2]
+        # Apply reranker (if configured) then lost-in-middle ordering on merged pool.
+        if self.cfg.retrieval.rerank and self.reranker is not None:
+            pool = self.reranker.rerank(question, pool)
+        chunks = order_lost_in_middle(pool)
         return await self.answerer.answer(question, chunks)
 
     async def aask_stream(self, question: str, expand: bool | None = None,
@@ -294,7 +325,7 @@ class Raggity:
 
     def chat(self, conversation: Conversation, question: str) -> Answer:
         """Synchronous wrapper for :meth:`achat`."""
-        return asyncio.run(self.achat(conversation, question))
+        return _run_async(self.achat(conversation, question))
 
     def status(self) -> dict:
         return {

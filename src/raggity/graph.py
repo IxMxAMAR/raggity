@@ -5,6 +5,7 @@ Opt-in via the ``raggity[graph]`` extra (``networkx>=3.1``).
 from __future__ import annotations
 
 import json
+import re
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -140,15 +141,19 @@ class GraphStore:
     def link(self, query_entities: list[str]) -> set[str]:
         """Return the set of node keys that match any query entity.
 
-        Matching is case-insensitive: exact match first, then substring
-        containment (query term appears inside a node key).
+        Matching is case-insensitive: exact match first, then word-boundary
+        containment (query term appears as a whole word inside a node key).
+        Raw substring match (e.g. 'ai' ∈ 'training') is intentionally excluded
+        to avoid false positives.
         """
         matched: set[str] = set()
         node_keys = list(self._graph.nodes())
         for qe in query_entities:
             qe_lower = qe.lower()
+            # Escape special regex chars in the query entity
+            pattern = re.compile(r"\b" + re.escape(qe_lower) + r"\b")
             for nk in node_keys:
-                if qe_lower == nk or qe_lower in nk:
+                if qe_lower == nk or pattern.search(nk):
                     matched.add(nk)
         return matched
 
