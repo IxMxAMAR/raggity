@@ -13,10 +13,13 @@ Usage::
     docs = GitHubConnector("https://github.com/owner/repo").fetch()
     # optionally pin to a branch/tag/SHA:
     docs = GitHubConnector("https://github.com/owner/repo", ref="main").fetch()
+    # 40-hex commit SHA also works (uses fetch+checkout, not --branch):
+    docs = GitHubConnector("https://github.com/owner/repo", ref="a" * 40).fetch()
 """
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -24,6 +27,9 @@ from pathlib import Path
 from . import Connector
 from ..models import Document
 from ..readers import SUPPORTED_EXTS, read_file
+
+# Regex for a full 40-character hex commit SHA.
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 # ---------------------------------------------------------------------------
@@ -46,11 +52,37 @@ def _clone(url: str, dest: str) -> None:
 
 
 def _clone_ref(url: str, ref: str, dest: str) -> None:
-    """Shallow-clone *url* at *ref* into *dest* (branch or tag name)."""
+    """Shallow-clone *url* at *ref* into *dest* (branch or tag name).
+
+    NOTE: ``--branch`` only works with branch/tag names, not commit SHAs.
+    For SHAs use :func:`_clone_ref_sha`.
+    """
     subprocess.run(
         ["git", "clone", "--depth", "1", "--branch", ref, url, dest],
         check=True,
         capture_output=True,
+    )
+
+
+def _clone_ref_sha(url: str, sha: str, dest: str) -> None:
+    """Fetch a specific commit SHA into *dest* without using ``--branch``.
+
+    ``git clone --branch <sha>`` fails for commit SHAs on most servers.
+    Instead we: init an empty repo, add the remote, fetch the exact SHA
+    at depth 1, then checkout FETCH_HEAD.
+    """
+    subprocess.run(["git", "init", dest], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", url],
+        check=True, capture_output=True, cwd=dest,
+    )
+    subprocess.run(
+        ["git", "fetch", "--depth", "1", "origin", sha],
+        check=True, capture_output=True, cwd=dest,
+    )
+    subprocess.run(
+        ["git", "checkout", "FETCH_HEAD"],
+        check=True, capture_output=True, cwd=dest,
     )
 
 
@@ -79,7 +111,11 @@ class GitHubConnector(Connector):
         docs: list[Document] = []
         with tempfile.TemporaryDirectory() as tmpdir:
             if self.ref:
-                _clone_ref(self.repo_url, self.ref, tmpdir)
+                if _SHA_RE.fullmatch(self.ref):
+                    # 40-hex commit SHA: use fetch+checkout, not --branch
+                    _clone_ref_sha(self.repo_url, self.ref, tmpdir)
+                else:
+                    _clone_ref(self.repo_url, self.ref, tmpdir)
             else:
                 _clone(self.repo_url, tmpdir)
 
@@ -96,7 +132,8 @@ class GitHubConnector(Connector):
                     text = None
                 if not text:
                     continue
-                file_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                # Hash raw file bytes — consistent with loader.compute_file_hash.
+                file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
                 docs.append(
                     Document(
                         path=f"{self.repo_url}#{relpath}",

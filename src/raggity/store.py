@@ -47,6 +47,19 @@ class VectorStore(ABC):
     def from_config(cls, cfg, dim: int) -> "VectorStore": ...
 
 
+def _list_table_names(db) -> list[str]:
+    """Return table names from a LanceDB connection.
+
+    Handles both the legacy API (returns an object with a ``.tables``
+    attribute) and the modern API (returns a plain ``list[str]``).
+    """
+    result = db.list_tables()
+    if isinstance(result, list):
+        return result
+    # Legacy object with .tables attribute
+    return list(result.tables)
+
+
 def _row_to_chunk(row: dict, score: float = 0.0) -> Chunk:
     return Chunk(
         text=row["text"],
@@ -79,7 +92,7 @@ class LanceDBStore(VectorStore):
             pa.field("parent_text", pa.string()),
             pa.field("vector", pa.list_(pa.float32(), dim)),
         ])
-        if TABLE in self._db.list_tables().tables:
+        if TABLE in _list_table_names(self._db):
             self._tbl = self._db.open_table(TABLE)
         else:
             self._tbl = self._db.create_table(TABLE, schema=self._schema)
@@ -161,7 +174,7 @@ class LanceDBStore(VectorStore):
         return self._tbl.count_rows()
 
     def reset(self) -> None:
-        if TABLE in self._db.list_tables().tables:
+        if TABLE in _list_table_names(self._db):
             self._db.drop_table(TABLE)
         self._tbl = self._db.create_table(TABLE, schema=self._schema)
         self._fts_ready = False
@@ -193,13 +206,28 @@ class LanceDBStore(VectorStore):
         try:
             rows = self._tbl.search().where(predicate, prefilter=True).limit(len(ids)).to_list()
         except Exception:
-            # Fallback: scan and filter
-            rows = [r for r in self._tbl.search().limit(1_000_000).to_list()
-                    if r["chunk_id"] in set(ids)]
+            # Fallback: bounded page scan — cap at a reasonable max to avoid
+            # memory exhaustion on large tables when the primary path fails.
+            _FALLBACK_CAP = 50_000
+            n = self.count()
+            if n > _FALLBACK_CAP:
+                log.warning(
+                    "raggity.store: get_by_chunk_ids primary path failed; fallback scan "
+                    "capped at %d rows (%d total) — some results may be missing.",
+                    _FALLBACK_CAP, n,
+                )
+            id_set = set(ids)
+            rows = [r for r in self._tbl.search().limit(_FALLBACK_CAP).to_list()
+                    if r["chunk_id"] in id_set]
         return [_row_to_chunk(r) for r in rows]
 
     def all_chunks(self) -> list[Chunk]:
-        """Return all chunks in the store (used for graph building)."""
+        """Return all chunks in the store (used for graph building).
+
+        The primary path reads directly from Lance without a vector search
+        limit.  The fallback also reads all rows — graph building genuinely
+        requires the full corpus — but logs a warning if it had to fall back.
+        """
         n = self.count()
         if n == 0:
             return []
@@ -209,6 +237,14 @@ class LanceDBStore(VectorStore):
                          "ordinal", "text", "parent_id", "parent_text"]
             ).to_pylist()
         except Exception:
+            # Fallback: search() with full-count limit for graph correctness.
+            # This is intentional — all_chunks() must return every chunk for
+            # the graph builder; we log so the operator knows the primary path
+            # failed, but we do NOT cap here (truncating would break the graph).
+            log.warning(
+                "raggity.store: all_chunks primary path failed; falling back to "
+                "search().limit(%d) — upgrade lancedb if this persists.", n,
+            )
             rows = self._tbl.search().limit(n).to_list()
         return [_row_to_chunk(r) for r in rows]
 

@@ -59,12 +59,15 @@ class ObsidianConnector(Connector):
         for path in sorted(self.vault_dir.rglob("*.md")):
             if not path.is_file():
                 continue
-            raw = path.read_text(encoding="utf-8", errors="replace")
+            raw_bytes = path.read_bytes()
+            raw = raw_bytes.decode("utf-8", errors="replace")
             text = _normalise_wikilinks(raw)
-            file_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            # Hash raw file bytes — consistent with loader.compute_file_hash.
+            file_hash = hashlib.sha256(raw_bytes).hexdigest()
             docs.append(
                 Document(
-                    path=str(path),
+                    # Use POSIX forward slashes (avoids Windows backslashes).
+                    path=Path(path).as_posix(),
                     title=path.stem,
                     text=text,
                     file_hash=file_hash,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import uuid
+import warnings
 
 from .models import Chunk
 from .store import VectorStore
@@ -35,11 +36,22 @@ class QdrantStore(VectorStore):
                 self._collection,
                 vectors_config=m.VectorParams(size=self._dim, distance=m.Distance.COSINE),
             )
-            if self._remote:  # payload indexes have no effect (and warn) in local/:memory: mode
+            # Create payload indexes for all modes (remote, local, :memory:).
+            # Best-effort: some older qdrant-client / qdrant-local builds reject index
+            # creation on in-memory collections — degrade gracefully if so.
+            # NOTE: `text` is indexed as a TEXT (MatchText keyword-match) field, which
+            # enables substring/token filtering but is NOT true BM25 ranking (parity gap
+            # vs LanceDB's Tantivy-backed FTS).  BM25 scoring requires a remote Qdrant
+            # server; local/:memory: falls back to rank-by-position in text_search().
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")  # suppress local-mode "no effect" UserWarning
                 try:
                     self._client.create_payload_index(
                         self._collection, "text",
                         field_schema=m.TextIndexParams(type=m.TextIndexType.TEXT))
+                except Exception:
+                    pass
+                try:
                     self._client.create_payload_index(
                         self._collection, "source_path",
                         field_schema=m.PayloadSchemaType.KEYWORD)
