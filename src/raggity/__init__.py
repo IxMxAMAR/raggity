@@ -1,4 +1,4 @@
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 
 # Register built-in connectors so resolve("connector", ...) works after
 # `import raggity` without requiring callers to import sub-packages first.

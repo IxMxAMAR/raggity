@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "raggity"
-version = "0.7.0"
+version = "0.7.1"
 description = "Local-first, top-tier RAG over your notes, docs, and PDFs — answered by Claude."
 readme = "README.md"
 requires-python = ">=3.11"

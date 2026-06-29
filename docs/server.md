@@ -52,6 +52,17 @@ Trigger incremental indexing.
 curl -X POST http://localhost:8000/ingest
 ```
 
+### `POST /ingest/content`
+
+Ingest caller-supplied documents directly (no server-side file access needed). Requires auth when enabled, and ingests into the **caller's own namespace** when `server.per_user = true`. Body: `{"documents": [{"path": "...", "text": "...", "title": "..."}]}`. Returns `{"ingested": <n>}`.
+
+```bash
+curl -X POST http://localhost:8000/ingest/content \
+  -H "content-type: application/json" \
+  -H "X-API-Key: $KEY" \
+  -d '{"documents": [{"path": "note1.md", "text": "Backups run nightly at 2am."}]}'
+```
+
 ### `POST /ask`
 
 Ask a question. Returns JSON with `answer`, `abstained`, `citations`, and optionally `session_id`.
@@ -156,6 +167,10 @@ claude login   # subscription
 # or
 export ANTHROPIC_API_KEY=sk-ant-...   # API key
 ```
+
+### Multi-tenant (`server.per_user`)
+
+With `server.auth = "api_key"` and `server.per_user = true`, each API key gets its own **isolated index namespace** and its own **session namespace** — one tenant can never read, continue, or delete another tenant's conversations or documents. Tenants ingest their own content via `POST /ingest/content`. Per-tenant `Raggity` instances are cached with an LRU bound (`server.max_user_rags`, default 128) and closed on eviction/shutdown.
 
 ---
 
