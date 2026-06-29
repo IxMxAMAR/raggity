@@ -219,6 +219,140 @@ class FakeRerankerLowAbsolute:
         return out
 
 
+def test_parent_document_respects_score_ordering():
+    """parent_document=True + mix of parented and non-parented chunks:
+    best-scored chunk (even when parented) must appear at head/tail.
+
+    The bug: old code ran order_lost_in_middle(top) then expand_to_parents(ordered).
+    expand_to_parents appends ALL parented chunks AFTER non-parented chunks, so
+    even the highest-scored chunk (if parented) ends up after lower-scored orphans.
+
+    Fix: expand_to_parents first, then order_lost_in_middle on the expanded result."""
+    from raggity.retriever import order_lost_in_middle, expand_to_parents
+
+    # Scenario: c_p1 (parented, score=0.9 best) + c_orphan (non-parented, score=0.6)
+    # Bug: old order(top) → expand puts c_orphan at [0] (non-parented goes first), p1 after
+    # Fix: expand(top) first collapses parents in-place, then order → p1 at [0]
+
+    c_p1 = _chunk("c_p1", "parent one child", score=0.9)
+    c_p1.parent_id = "p1"; c_p1.parent_text = "PARENT ONE FULL TEXT"
+    c_orphan = _chunk("c_orphan", "standalone chunk", score=0.6)
+    # c_orphan has no parent_id (default None from Chunk)
+
+    input_chunks = [c_p1, c_orphan]
+
+    # OLD code: order then expand
+    old_ordered = order_lost_in_middle(input_chunks)  # [c_p1(0.9), c_orphan(0.6)]
+    old_result = expand_to_parents(old_ordered)
+    # OLD: orphan goes to 'out' first (position 0), then p1_expanded appended after
+    assert old_result[0].chunk_id == "c_orphan", (
+        "Confirming old bug: non-parented orphan (score=0.6) ends up at head, "
+        "not the best-scored parented chunk p1 (0.9)"
+    )
+
+    # NEW code: expand then order → p1_exp (score=0.9) at head
+    new_expanded = expand_to_parents(input_chunks)   # [c_orphan, p1_exp(score=0.9)]
+    new_result = order_lost_in_middle(new_expanded)  # p1_exp at head
+    assert new_result[0].parent_id == "p1", (
+        f"New code: best-scored parented chunk p1 must be at head, got {new_result[0]}"
+    )
+
+
+def test_retriever_parent_document_best_at_head():
+    """Integration: Retriever with parent_document=True, 3 chunks: best must be at head.
+
+    Bug: old code ran order_lost_in_middle then expand_to_parents.
+    With 3 chunks: [c_p1(0.9), c_p2(0.7), c_orphan(0.6)] → lost-in-middle →
+    [c_p1, c_orphan, c_p2] → expand_to_parents → [c_orphan, p1_exp, p2_exp]
+    → c_orphan at head (wrong: lower score than p1).
+
+    Fix: expand first → [c_orphan, p1_exp, p2_exp] (all present, p1 score=0.9) →
+    lost-in-middle → [p1_exp, c_orphan, p2_exp] → p1 at head (correct)."""
+    from raggity.config import RetrievalConfig
+
+    c_p1 = _chunk("c_p1", "relevant parent child", score=0.9)
+    c_p1.parent_id = "p1"; c_p1.parent_text = "PARENT ONE FULL TEXT"
+    c_p2 = _chunk("c_p2", "other parent child", score=0.7)
+    c_p2.parent_id = "p2"; c_p2.parent_text = "PARENT TWO FULL TEXT"
+    c_orphan = _chunk("c_orphan", "standalone chunk", score=0.6)
+
+    class _IdentityReranker:
+        def rerank(self, query, cands):
+            return sorted(cands, key=lambda c: c.score, reverse=True)
+
+    store = FakeStore([c_p1, c_p2, c_orphan], [])
+    cfg = RetrievalConfig(candidates=10, top_k=3, rerank=True, relevance_floor=0.0,
+                          sufficiency_floor=0.5, dedup_cosine=1.01, parent_document=True)
+    r = Retriever(FakeEmbedder(), store, _IdentityReranker(), cfg)
+    out = r.retrieve("find relevant")
+
+    assert len(out) == 3
+    # After fix: p1_exp (score=0.9) at head (best score)
+    assert out[0].chunk_id == "c_p1", (
+        f"Best-scored chunk c_p1 (0.9) must be at head after fix, "
+        f"got order: {[c.chunk_id for c in out]}"
+    )
+
+
+def test_hybrid_no_rerank_order_by_rrf_score():
+    """hybrid=True + rerank=False: final order must reflect RRF fused score,
+    not the raw dense-cosine .score values.
+
+    Bug: old code kept original .score on candidates; order_lost_in_middle sorts on
+    .score which may mix scales → chunk with high dense cosine but low RRF ends at head.
+    Fix: assign RRF fused score to .score before ordering."""
+    from raggity.config import RetrievalConfig
+    from raggity.store import rrf_fuse
+
+    # Scenario designed to expose the bug:
+    #   c_dense_only: raw score=0.85 (high dense), NOT in sparse → low RRF
+    #   c_both:       raw score=0.6 (lower dense), rank=1 dense + rank=1 sparse → high RRF
+    # Old code: order by raw .score → c_dense_only(0.85) at head (wrong)
+    # Fixed code: order by RRF score → c_both at head (correct)
+
+    c_dense_only = _chunk("c_dense_only", "dense only chunk", score=0.85)
+    c_both = _chunk("c_both", "hybrid chunk", score=0.60)
+    c_low = _chunk("c_low", "low everything", score=0.55)
+
+    class _HybridStore:
+        def vector_search(self, qv, limit):
+            # Dense ranks: c_dense_only=1(score=0.85), c_both=2(0.60), c_low=3(0.55)
+            return [c_dense_only, c_both, c_low][:limit]
+        def text_search(self, q, limit):
+            # Sparse: c_both=1, no c_dense_only
+            return [c_both, c_low][:limit]
+
+    cfg = RetrievalConfig(candidates=10, top_k=3, rerank=False, relevance_floor=0.0,
+                          sufficiency_floor=0.5, dedup_cosine=1.01, hybrid=True)
+    r = Retriever(FakeEmbedder(), _HybridStore(), None, cfg)
+    out = r.retrieve("test query")
+
+    assert len(out) == 3
+
+    # Compute expected RRF fused scores to know what "correct" order is
+    dense_ids = ["c_dense_only", "c_both", "c_low"]
+    sparse_ids = ["c_both", "c_low"]
+    fused = rrf_fuse([dense_ids, sparse_ids], k=cfg.rrf_k)
+    # c_both appears in both lists → higher RRF than c_dense_only (dense-only)
+    assert fused["c_both"] > fused["c_dense_only"], (
+        "Test setup: c_both must have higher RRF than c_dense_only"
+    )
+
+    # With fix: .score on output reflects RRF → c_both (higher RRF) at head or tail
+    # Specifically c_dense_only must NOT be at head (it has high raw score but low RRF)
+    score_by_id = {c.chunk_id: c.score for c in out}
+    # After fix, scores should be RRF scores (< 1.0, not raw cosine)
+    assert score_by_id["c_both"] > score_by_id["c_dense_only"], (
+        f"After fix: c_both RRF score must exceed c_dense_only RRF score; "
+        f"got c_both={score_by_id['c_both']:.4f}, c_dense_only={score_by_id['c_dense_only']:.4f}"
+    )
+    # Head must be c_both or c_low (by RRF), NOT c_dense_only
+    assert out[0].chunk_id != "c_dense_only", (
+        f"c_dense_only (high raw score, low RRF) must not be at head; "
+        f"got order: {[c.chunk_id for c in out]}"
+    )
+
+
 def test_high_dense_low_rerank_still_returns_results():
     """Regression guard: cross-encoder absolute score of 0.0 must NOT cause abstention.
 

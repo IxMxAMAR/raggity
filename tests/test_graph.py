@@ -127,8 +127,39 @@ def test_graphstore_link_exact_match():
     assert "nas" in nodes
 
 
+def test_graphstore_link_word_boundary_match():
+    """link() finds node when query term matches at a word boundary within a node key."""
+    from raggity.graph import GraphStore
+
+    g = GraphStore()
+    g.add(["Backup System", "NAS"], [], "c1")
+    nodes = g.link(["backup"])
+    assert "backup system" in nodes
+
+
+def test_graphstore_link_no_infix_overmatch():
+    """link() must NOT match 'AI' inside 'training' (infix/substring over-match).
+
+    The bug: 'ai' in 'training' → True (raw substring), matching unrelated node.
+    Fix: require word-boundary match so 'ai' only matches nodes containing 'ai'
+    as a whole word (e.g. 'ai safety', 'ai', 'ai model') not inside other words."""
+    from raggity.graph import GraphStore
+
+    g = GraphStore()
+    g.add(["training", "AI safety", "AI"], [], "c1")
+
+    # "AI" should NOT match "training" (ai is inside "training" as infix)
+    nodes = g.link(["AI"])
+    assert "training" not in nodes, (
+        "'AI' must not match 'training' via infix substring"
+    )
+    # "AI" SHOULD match "ai safety" and "ai" (word-boundary matches)
+    assert "ai safety" in nodes, "'AI' should match 'ai safety' (word boundary)"
+    assert "ai" in nodes, "'AI' should match 'ai' (exact match)"
+
+
 def test_graphstore_link_substring_match():
-    """link() finds node when query term is a substring of a node key."""
+    """link() finds node when query term matches at a word boundary within a node key."""
     from raggity.graph import GraphStore
 
     g = GraphStore()

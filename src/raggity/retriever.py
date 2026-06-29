@@ -105,6 +105,12 @@ class Retriever:
             fused = rrf_fuse(all_id_lists, k=self.cfg.rrf_k)
             ranked_ids = sorted(fused, key=lambda cid: fused[cid], reverse=True)
             candidates = [by_id[cid] for cid in ranked_ids if cid in by_id][:n]
+            # When rerank is off, stamp the RRF fused score onto each candidate so that
+            # order_lost_in_middle sorts on a single scale (not a mix of dense-cosine
+            # and BM25/synthetic values). Rerank path overwrites .score anyway.
+            if not self.cfg.rerank:
+                candidates = [replace(c, score=fused.get(c.chunk_id, c.score))
+                              for c in candidates]
         else:
             # Dense-only: preserve order from first query's dense results
             all_ids: list[str] = []
@@ -139,7 +145,9 @@ class Retriever:
 
         survivors = dedup_chunks(candidates, self.embedder, self.cfg.dedup_cosine)
         top = survivors[: self.cfg.top_k]
-        ordered = order_lost_in_middle(top)
+        # Expand to parents BEFORE ordering so score-based ordering (lost-in-middle)
+        # acts on the final collapsed set, not on the pre-expansion child list.
         if getattr(self.cfg, "parent_document", False):
-            ordered = expand_to_parents(ordered)
+            top = expand_to_parents(top)
+        ordered = order_lost_in_middle(top)
         return ordered

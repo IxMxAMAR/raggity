@@ -246,6 +246,209 @@ def test_core_graph_load_on_init(tmp_path, monkeypatch):
     assert rag._graph.count() == 1
 
 
+def test_fingerprint_changes_with_chunk_params(tmp_path):
+    """_fingerprint() must change when chunk parameters change so stale chunks are evicted."""
+    from raggity.config import RaggityConfig, IndexConfig, RetrievalConfig
+    from raggity.core import Raggity
+
+    cfg1 = RaggityConfig(
+        index=IndexConfig(path=str(tmp_path / "idx")),
+        retrieval=RetrievalConfig(parent_document=False, parent_target_tokens=1024,
+                                  child_target_tokens=256),
+    )
+    cfg2 = RaggityConfig(
+        index=IndexConfig(path=str(tmp_path / "idx")),
+        retrieval=RetrievalConfig(parent_document=False, parent_target_tokens=2048,
+                                  child_target_tokens=512),
+    )
+    cfg3 = RaggityConfig(
+        index=IndexConfig(path=str(tmp_path / "idx")),
+        retrieval=RetrievalConfig(parent_document=True, parent_target_tokens=1024,
+                                  child_target_tokens=256),
+    )
+
+    rag1 = Raggity(cfg1)
+    rag2 = Raggity(cfg2)
+    rag3 = Raggity(cfg3)
+
+    fp1 = rag1._fingerprint()
+    fp2 = rag2._fingerprint()
+    fp3 = rag3._fingerprint()
+
+    assert fp1 != fp2, "different parent/child token targets → different fingerprint"
+    assert fp1 != fp3, "parent_document=True vs False → different fingerprint"
+    assert fp2 != fp3, "all three must be distinct"
+
+
+async def test_aask_decompose_applies_ordering(tmp_path, monkeypatch):
+    """aask_decompose must apply order_lost_in_middle on the merged pool.
+
+    We verify ordering by patching retriever.retrieve to return chunks with known
+    scores and checking that the best-scored chunk is at the head of what the
+    answerer receives."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+    )
+
+    class _Block:
+        def __init__(self, t): self.text = t
+    class _AM:
+        def __init__(self, t): self.content = [_Block(t)]
+
+    async def _fake_query(prompt, options):
+        if "sub-questions" in prompt or ("Question:" in prompt and "Give at most" in prompt):
+            yield _AM("how often?\nwhere stored?")
+        else:
+            yield _AM("Backups run nightly to the NAS [doc_1#00000000].")
+
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
+
+    from raggity.core import Raggity
+    from raggity.models import Chunk
+    rag = Raggity(cfg)
+    rag.ingest()
+
+    # Patch retriever.retrieve to return known chunks with scores.
+    # Design: first call returns c_low first (score=0.3) then c_high (score=0.9)
+    # so insertion order in merged dict is [c_low, c_high, c_med].
+    # Without ordering fix: answerer gets [c_low(0.3), c_high(0.9), c_med(0.6)] — c_low at head
+    # With fix (order_lost_in_middle): c_high(0.9) at head
+    call_count = [0]
+    def _fake_retrieve(q):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            # NOTE: c_low first, then c_high — so without ordering, c_low is at head
+            c_low = Chunk("low-score text", "a.md", "A", "A", 1, "c_low", score=0.3)
+            c_high = Chunk("high-score text", "a.md", "A", "A", 0, "c_high", score=0.9)
+            return [c_low, c_high]
+        else:
+            c_med = Chunk("medium text", "a.md", "A", "A", 2, "c_med", score=0.6)
+            return [c_med]
+    monkeypatch.setattr(rag.retriever, "retrieve", _fake_retrieve)
+
+    # Spy on answerer.answer to capture the chunks
+    chunks_to_answer = []
+    original_answer = rag.answerer.answer
+    async def _spy_answer(question, chunks, **kw):
+        chunks_to_answer.append(list(chunks))
+        return await original_answer(question, chunks, **kw)
+    monkeypatch.setattr(rag.answerer, "answer", _spy_answer)
+
+    ans = await rag.aask_decompose("how are backups done?")
+    assert "NAS" in ans.text
+    assert len(chunks_to_answer) == 1
+
+    chunks = chunks_to_answer[0]
+    assert len(chunks) >= 2, "merged pool must have multiple chunks"
+
+    # After fix: order_lost_in_middle applied → best score at head or tail
+    # c_high (0.9) must be at an edge
+    scores = [c.score for c in chunks]
+    edge_scores = {scores[0], scores[-1]}
+    max_score = max(scores)
+    assert max_score in edge_scores, (
+        f"Best score {max_score} must be at edge (head or tail); scores={scores}"
+    )
+
+
+async def test_transform_failure_falls_back_to_base_query(tmp_path, monkeypatch):
+    """If a query transform (hyde/expand/step_back) raises, aask must still return
+    an answer via base retrieval, not propagate the exception."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+    )
+
+    class _Block:
+        def __init__(self, t): self.text = t
+    class _AM:
+        def __init__(self, t): self.content = [_Block(t)]
+
+    async def _fake_query(prompt, options):
+        yield _AM("Backups run nightly to the NAS [doc_1#00000000].")
+
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
+
+    # Patch the HyDE generator to raise
+    import raggity.query_transform as qt_mod
+    async def _bad_hyde(question, provider):
+        raise RuntimeError("HyDE LLM failed")
+    monkeypatch.setattr(qt_mod, "generate_hyde_document", _bad_hyde)
+
+    from raggity.core import Raggity
+    rag = Raggity(cfg)
+    rag.ingest()
+
+    # With hyde=True and a failing HyDE, must not raise — falls back to base query
+    ans = await rag.aask("how are backups done?", hyde=True)
+    assert "NAS" in ans.text, "answer must come from base retrieval even if hyde fails"
+
+
+async def test_ask_from_running_loop_no_runtimeerror(tmp_path, monkeypatch):
+    """ask() and chat() called from inside a running event loop must not raise RuntimeError.
+
+    Bare asyncio.run() raises 'This event loop is already running.' in async contexts
+    (pytest-asyncio, Jupyter). _run_async() handles this by delegating to a thread."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+    )
+
+    async def _fake_query(prompt, options):
+        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    from raggity.core import Raggity
+    from raggity.conversation import Conversation
+    rag = Raggity(cfg)
+    rag.ingest()
+
+    # These would raise RuntimeError("This event loop is already running.") with bare asyncio.run
+    ans = rag.ask("how are backups done?")
+    assert "NAS" in ans.text
+
+    conv = Conversation()
+    ans2 = rag.chat(conv, "how are backups done?")
+    assert "NAS" in ans2.text
+
+
+async def test_ask_decompose_from_running_loop(tmp_path, monkeypatch):
+    """ask_decompose() from inside a running loop must not raise RuntimeError."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+    )
+
+    async def _fake(prompt, options):
+        if "sub-questions" in prompt or ("Question:" in prompt and "Give at most" in prompt):
+            yield _AssistantMessage("how often?\nwhere stored?")
+        else:
+            yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+
+    monkeypatch.setattr(llm_mod, "query", _fake)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    from raggity.core import Raggity
+    rag = Raggity(cfg)
+    rag.ingest()
+    # Would raise RuntimeError with bare asyncio.run
+    ans = rag.ask_decompose("how are backups done?")
+    assert "NAS" in ans.text
+
+
 def test_core_chat_two_turns_appends_conversation(tmp_path, monkeypatch):
     """2-turn chat: conversation accumulates 4 turns (user+assistant×2)."""
     notes = tmp_path / "notes"; notes.mkdir()

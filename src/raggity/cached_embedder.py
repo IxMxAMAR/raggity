@@ -39,8 +39,22 @@ class CachedEmbedder(Embedder):
     def embed_query(self, text: str) -> list[float]:
         return self._inner.embed_query(text)
 
+    @property
+    def _model_id(self) -> str:
+        """Stable model identifier for cache-key scoping.
+
+        Uses ``model_id`` if the inner embedder exposes it (e.g. tests),
+        otherwise falls back to the class name so that different embedder
+        types never share keys.
+        """
+        return getattr(self._inner, "model_id", type(self._inner).__name__)
+
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        keys = [hashlib.sha256(t.encode("utf-8")).hexdigest() for t in texts]
+        model_prefix = f"{self._model_id}|{self._inner.dim}|"
+        keys = [
+            hashlib.sha256((model_prefix + t).encode("utf-8")).hexdigest()
+            for t in texts
+        ]
         missing = [i for i, k in enumerate(keys) if k not in self._cache]
         if missing:
             vecs = self._inner.embed_documents([texts[i] for i in missing])
