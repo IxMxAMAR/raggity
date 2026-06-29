@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.11"]
+        python-version: ["3.13", "3.12", "3.11"]
 
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
             models-${{ matrix.python-version }}-
 
       - name: Install dependencies
-        run: pip install -e ".[server,qdrant,openai,web,docs,ocr,graph,otel,dev]"
+        run: pip install -e ".[server,qdrant,openai,web,docs,ocr,graph,otel,watch,dev]"
 
       - name: Run tests
         run: python -m pytest -q

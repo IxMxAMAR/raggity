@@ -1,3 +1,4 @@
+import pytest
 from raggity.models import Chunk
 from raggity.evaluate import evaluate, EvalResult, load_golden
 
@@ -68,3 +69,48 @@ def test_llm_judge_averages_verdicts(tmp_path, monkeypatch):
     res = asyncio.run(llm_judge(rag, golden, rag.provider))
     assert isinstance(res, JudgeResult)
     assert res.faithfulness == 1.0 and res.answer_relevance == 1.0 and res.n == 1
+
+
+# ---------------------------------------------------------------------------
+# Fix 4: golden-row schema validation + empty-golden div-by-zero guard
+# ---------------------------------------------------------------------------
+
+def test_evaluate_malformed_row_raises_with_row_index():
+    """A row missing 'question' raises ValueError mentioning the row index."""
+    golden = [
+        {"question": "ok?", "relevant_source_paths": []},
+        {"TYPO_question": "bad row"},  # row index 1
+    ]
+    with pytest.raises((ValueError, KeyError)) as exc:
+        evaluate(FakeRetriever(), golden, k=5)
+    assert "1" in str(exc.value) or "row" in str(exc.value).lower()
+
+
+def test_evaluate_empty_golden_no_div_by_zero():
+    """evaluate() on an empty golden set returns zeros, no ZeroDivisionError."""
+    res = evaluate(FakeRetriever(), [], k=5)
+    assert res == EvalResult(0.0, 0.0, 0.0, 0)
+
+
+def test_llm_judge_empty_golden_no_div_by_zero():
+    """llm_judge() on an empty golden set returns zeros, no ZeroDivisionError."""
+    import asyncio
+    from raggity.evaluate import llm_judge, JudgeResult
+
+    class FakeProv:
+        async def complete(self, sys, prompt): return "YES"
+
+    class FakeRag:
+        class retriever:
+            @staticmethod
+            def retrieve(q): return []
+        class answerer:
+            @staticmethod
+            async def answer(q, chunks):
+                class R:
+                    text = ""; abstained = True; citations = []
+                return R()
+
+    res = asyncio.run(llm_judge(FakeRag(), [], FakeProv()))
+    assert isinstance(res, JudgeResult)
+    assert res.n == 0
