@@ -1,3 +1,5 @@
+import os
+import pytest
 import raggity.llm as llm
 
 
@@ -35,6 +37,32 @@ async def test_claude_api_key_mode_requires_key(monkeypatch):
     async def _fake_query(prompt, options):
         yield _AM("x")
     monkeypatch.setattr(llm, "query", _fake_query); monkeypatch.setattr(llm, "AssistantMessage", _AM)
-    import pytest
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
         await llm.ClaudeProvider(auth="api_key").complete("s", "p")
+
+
+# Fix 4: subscription mode strips ANTHROPIC_AUTH_TOKEN (and ANTHROPIC_API_KEY)
+def test_subscription_strips_auth_token(monkeypatch):
+    """subscription auth must exclude ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN from env."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "bearer-token")
+    p = llm.ClaudeProvider(auth="subscription")
+    opts = p._options("sys")
+    env = opts.env
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "ANTHROPIC_AUTH_TOKEN" not in env
+
+
+# Fix 1: LLMProvider has optional aclose no-op; ClaudeProvider aclose is no-op
+async def test_llm_provider_aclose_noop():
+    """aclose() on ClaudeProvider must be callable and be a no-op (no error)."""
+    p = llm.ClaudeProvider()
+    await p.aclose()  # must not raise
+
+
+# Fix 1: aclose is on LLMProvider base so any provider is callable uniformly
+def test_llm_provider_base_has_aclose():
+    """LLMProvider base class must expose aclose() so callers are uniform."""
+    import inspect
+    # aclose should exist on the base class
+    assert hasattr(llm.LLMProvider, "aclose")
