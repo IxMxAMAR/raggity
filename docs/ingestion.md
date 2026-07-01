@@ -11,21 +11,17 @@ raggity indexes your content with `rag ingest`. Ingestion is **incremental** —
 | `.md` | Markdown |
 | `.txt` | Plain text |
 | `.pdf` | Embedded text extraction via pypdf; falls back to OCR when text is absent |
-| `.docx` | Requires `raggity[docs]` |
-| `.html` | Requires `raggity[docs]` |
+| `.docx` | Word documents — included in base install |
+| `.html` | HTML pages — included in base install |
 | `.csv` | Parsed as key: value rows |
-| `.pptx` | Requires `raggity[docs]` |
+| `.pptx` | PowerPoint slides — included in base install |
 | `.png`, `.jpg`, `.jpeg`, `.tiff`, `.bmp`, `.webp` | OCR via RapidOCR — requires `raggity[ocr]` |
 
-### Document extra
+### Document formats
 
-Install optional document readers:
+`.docx`, `.html`, and `.pptx` are supported in the base install — no extra required.
 
-```bash
-pip install raggity[docs]
-```
-
-Adds support for `.docx`, `.html`, and `.pptx` files.
+The legacy `raggity[docs]` extra is a no-op alias kept for backwards compatibility.
 
 ### OCR extra
 
