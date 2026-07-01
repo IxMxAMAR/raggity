@@ -38,6 +38,26 @@ def test_server_ingest_status_ask(tmp_path, monkeypatch):
             assert set(c.keys()) == {"chunk_id", "source_path", "title", "supported"}
 
 
+def test_ingest_response_has_new_skip_fields(tmp_path):
+    """POST /ingest response includes skipped_needs_extra and skipped_generic."""
+    from raggity.server import create_app
+    app = create_app(_cfg(tmp_path))
+    with TestClient(app) as client:
+        r = client.post("/ingest")
+        assert r.status_code == 200
+        body = r.json()
+        # Existing fields still present
+        assert "added" in body
+        assert "updated" in body
+        assert "deleted" in body
+        assert "unchanged" in body
+        # New fields
+        assert "skipped_needs_extra" in body
+        assert "skipped_generic" in body
+        assert isinstance(body["skipped_needs_extra"], dict)
+        assert isinstance(body["skipped_generic"], int)
+
+
 # ---------------------------------------------------------------------------
 # RED: sessions + SSE (Task 2)
 # ---------------------------------------------------------------------------
