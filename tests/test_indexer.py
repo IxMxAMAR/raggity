@@ -97,3 +97,27 @@ def test_indexer_calls_ensure_ann(tmp_path, emb, monkeypatch):
     monkeypatch.setattr(store, "ensure_ann_index", lambda t: seen.setdefault("t", t))
     Indexer(emb, store, manifest_path=str(tmp_path / "m.json"), ann_threshold=42).ingest([str(notes / "*.md")])
     assert seen["t"] == 42
+
+
+def test_ingest_report_carries_skipped_needs_extra(tmp_path, emb, monkeypatch):
+    """When a reader raises MissingDependencyError, IngestReport records it."""
+    import raggity.readers as r
+    from raggity.readers import MissingDependencyError
+
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "img.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (notes / "a.md").write_text("# A\n\nalpha content")
+
+    # Simulate missing ocr extra for images
+    monkeypatch.setattr(r, "_run_ocr", lambda src: (_ for _ in ()).throw(
+        MissingDependencyError(extra="ocr", message="needs ocr")
+    ))
+
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    indexer = Indexer(emb, store, manifest_path=str(tmp_path / "m.json"))
+    report = indexer.ingest([str(notes / "*.md"), str(notes / "*.png")])
+
+    assert report.added >= 1  # the .md got indexed
+    assert report.skipped_needs_extra.get("ocr", 0) == 1
+    assert report.skipped_generic == 0

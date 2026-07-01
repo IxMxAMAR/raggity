@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .chunker import chunk_document
@@ -15,6 +15,8 @@ class IngestReport:
     updated: int = 0
     deleted: int = 0
     unchanged: int = 0
+    skipped_needs_extra: dict[str, int] = field(default_factory=dict)
+    skipped_generic: int = 0
 
 
 class Indexer:
@@ -68,7 +70,13 @@ class Indexer:
             self.store.reset()
             self._clear_manifest()
         manifest = self._load_manifest()
-        docs = load_documents(globs)
+        docs, skipped_needs_extra, skipped_generic = load_documents(globs)
+        # Accumulate skip counts into the report
+        for extra, cnt in skipped_needs_extra.items():
+            report.skipped_needs_extra[extra] = (
+                report.skipped_needs_extra.get(extra, 0) + cnt
+            )
+        report.skipped_generic += skipped_generic
         seen: dict[str, str] = {}
 
         all_chunks: list = []
