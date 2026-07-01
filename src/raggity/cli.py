@@ -30,6 +30,62 @@ def _rag(config: str | None) -> Raggity:
     return Raggity(load_config(config))
 
 
+_INIT_TEMPLATE = """\
+# raggity.toml — configuration for raggity
+# Edit [sources] then run: rag ingest
+
+[sources]
+# Glob patterns for files to index. Supports **, *, and ~ expansion.
+include = [
+  "**/*.md",
+  "**/*.txt",
+  "**/*.pdf",
+  "**/*.docx",
+  # "**/*.html",     # included in base install
+  # "**/*.pptx",     # included in base install
+  # "**/*.png",      # requires: pip install raggity[ocr]
+  # "**/*.jpg",      # requires: pip install raggity[ocr]
+]
+
+[embedding]
+# Model used to embed your documents. CPU-friendly default.
+model = "BAAI/bge-small-en-v1.5"
+provider = "cpu"
+
+[retrieval]
+hybrid = true    # combine dense + sparse (BM25) retrieval
+rerank = true    # cross-encoder reranking for precision
+top_k = 5        # chunks passed to the LLM
+
+[generation]
+# auth = "auto"   -- uses ANTHROPIC_API_KEY if set, otherwise claude login session
+# Run `claude login` once if you have a Claude subscription.
+# Or: export ANTHROPIC_API_KEY=sk-ant-...
+auth = "auto"
+model = "claude-opus-4-8"
+
+[index]
+path = ".raggity/index"
+"""
+
+
+@app.command()
+def init(config: str = typer.Option(None, "--config")):
+    """Write an annotated raggity.toml template (does not overwrite)."""
+    from pathlib import Path as _Path  # noqa: PLC0415
+    dest = _Path(config) if config else _Path.cwd() / "raggity.toml"
+    if dest.exists():
+        console.print(f"[yellow]{dest.name} already exists — not overwriting.[/yellow]")
+        console.print(f"  Edit {dest} directly, then run [cyan]rag ingest[/cyan].")
+        return
+    dest.write_text(_INIT_TEMPLATE, encoding="utf-8")
+    console.print(f"[green]Created[/green] {dest}")
+    console.print("\nNext steps:")
+    console.print("  1. Edit [cyan]raggity.toml[/cyan] — set [sources] include patterns")
+    console.print("  2. Run [cyan]rag ingest[/cyan]  — index your files")
+    console.print('  3. Run [cyan]rag ask "your question here"[/cyan]')
+
+
 @app.command()
 def ingest(config: str = typer.Option(None, "--config")):
     """Incrementally index configured source folders."""
