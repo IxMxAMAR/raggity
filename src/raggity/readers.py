@@ -2,13 +2,21 @@
 
 Dispatch table: Path.suffix.lower() -> reader function.
 Optional-dep readers (docx, html, pptx) do a local import and raise a
-friendly RuntimeError if the library is absent.
+friendly MissingDependencyError if the library is absent.
 """
 from __future__ import annotations
 
 import csv
 import io
 from pathlib import Path
+
+
+class MissingDependencyError(RuntimeError):
+    """Raised when a file needs an optional extra that is not installed."""
+
+    def __init__(self, extra: str, message: str) -> None:
+        super().__init__(message)
+        self.extra = extra
 
 # ---------------------------------------------------------------------------
 # Supported extensions
@@ -51,9 +59,9 @@ def _run_ocr(src: str) -> str:
     try:
         from rapidocr_onnxruntime import RapidOCR  # noqa: PLC0415
     except (ImportError, TypeError):
-        raise RuntimeError(
-            "OCR needs: pip install raggity[ocr]  "
-            "(rapidocr-onnxruntime + pypdfium2)"
+        raise MissingDependencyError(
+            extra="ocr",
+            message="OCR needs: pip install raggity[ocr]  (rapidocr-onnxruntime + pypdfium2)",
         )
     if _ocr_engine_instance is None:
         _ocr_engine_instance = RapidOCR()
@@ -84,9 +92,9 @@ def _ocr_pdf(path: str) -> str:
     try:
         import pypdfium2 as pdfium  # noqa: PLC0415
     except ImportError:
-        raise RuntimeError(
-            "OCR of scanned PDFs needs: pip install raggity[ocr]  "
-            "(rapidocr-onnxruntime + pypdfium2)"
+        raise MissingDependencyError(
+            extra="ocr",
+            message="OCR of scanned PDFs needs: pip install raggity[ocr]  (rapidocr-onnxruntime + pypdfium2)",
         )
     import tempfile, os  # noqa: E401
 
@@ -117,7 +125,10 @@ def read_docx(path: str) -> str:
     try:
         import docx  # python-docx  # noqa: PLC0415
     except ImportError:
-        raise RuntimeError("reading .docx needs: pip install raggity[docs]")
+        raise MissingDependencyError(
+            extra="docs",
+            message="reading .docx needs: pip install raggity[docs]",
+        )
     doc = docx.Document(path)
     return "\n".join(para.text for para in doc.paragraphs)
 
@@ -126,7 +137,10 @@ def read_html(path: str) -> str:
     try:
         from bs4 import BeautifulSoup  # beautifulsoup4  # noqa: PLC0415
     except ImportError:
-        raise RuntimeError("reading .html needs: pip install raggity[docs]")
+        raise MissingDependencyError(
+            extra="docs",
+            message="reading .html needs: pip install raggity[docs]",
+        )
     raw = Path(path).read_text(encoding="utf-8", errors="replace")
     soup = BeautifulSoup(raw, "html.parser")
     return soup.get_text(" ", strip=True)
@@ -145,7 +159,10 @@ def read_pptx(path: str) -> str:
     try:
         from pptx import Presentation  # python-pptx  # noqa: PLC0415
     except ImportError:
-        raise RuntimeError("reading .pptx needs: pip install raggity[docs]")
+        raise MissingDependencyError(
+            extra="docs",
+            message="reading .pptx needs: pip install raggity[docs]",
+        )
     prs = Presentation(path)
     parts = []
     for slide in prs.slides:
