@@ -6,15 +6,13 @@
 pip install raggity
 ```
 
-## 2. Configure
-
-Copy the example config and edit it:
+## 2. Generate a config
 
 ```bash
-cp raggity.example.toml raggity.toml
+rag init
 ```
 
-Open `raggity.toml` and point `sources.include` at your notes:
+Open the generated `raggity.toml` and point `sources.include` at your notes:
 
 ```toml
 [sources]
@@ -43,6 +41,7 @@ raggity retrieves the most relevant chunks from your index, reranks them, and an
 
 | Command | Description |
 |---|---|
+| `rag init` | Create a `raggity.toml` config template |
 | `rag ingest` | Incrementally index configured sources |
 | `rag ingest-url <url>` | Fetch a web URL (and optionally crawl same-domain links) |
 | `rag ingest-repo <url>` | Shallow-clone a git repo and index all text files |

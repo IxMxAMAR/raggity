@@ -117,11 +117,11 @@ The `auth` field is ignored for `openai` and `ollama` backends.
 ## Quickstart
 
 ```bash
-# 1. Copy the example config and edit it
-cp raggity.example.toml raggity.toml
+# 1. Generate a config
+rag init
 ```
 
-Open `raggity.toml` and point `sources.include` at your notes:
+Edit `raggity.toml` to point `sources.include` at your files:
 
 ```toml
 [sources]

@@ -21,7 +21,8 @@ Install extras for additional capabilities:
 
 | Extra | Install | Adds |
 |---|---|---|
-| `docs` | `pip install raggity[docs]` | `.docx`, `.html`, `.pptx` reader support |
+| `docs` | `pip install raggity[docs]` | Back-compat alias — `.docx`, `.html`, `.pptx` are in the base install |
+| `all` | `pip install raggity[all]` | All optional extras except `docs-site` (server, qdrant, ocr, openai, web, graph, otel, watch) |
 | `ocr` | `pip install raggity[ocr]` | RapidOCR + pypdfium2 for scanned PDFs and images |
 | `server` | `pip install raggity[server]` | FastAPI HTTP server + web chat UI |
 | `qdrant` | `pip install raggity[qdrant]` | Qdrant vector store backend |
@@ -31,6 +32,8 @@ Install extras for additional capabilities:
 | `graph` | `pip install raggity[graph]` | GraphRAG knowledge-graph support |
 | `otel` | `pip install raggity[otel]` | OpenTelemetry tracing + metrics export |
 | `docs-site` | `pip install raggity[docs-site]` | MkDocs Material (for building this documentation site) |
+
+Common document formats (`.md`, `.txt`, `.pdf`, `.docx`, `.html`, `.pptx`, `.csv`) work out of the box with `pip install raggity`. Only image OCR and scanned PDFs need `raggity[ocr]`.
 
 You can combine extras:
 
