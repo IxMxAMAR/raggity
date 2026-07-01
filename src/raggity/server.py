@@ -166,8 +166,14 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
     async def ingest(identity: str | None = Depends(require_auth)):
         rag: Raggity = await _resolve_rag(identity)
         report = await asyncio.to_thread(rag.ingest)
-        return {"added": report.added, "updated": report.updated,
-                "deleted": report.deleted, "unchanged": report.unchanged}
+        return {
+            "added": report.added,
+            "updated": report.updated,
+            "deleted": report.deleted,
+            "unchanged": report.unchanged,
+            "skipped_needs_extra": report.skipped_needs_extra,
+            "skipped_generic": report.skipped_generic,
+        }
 
     @app.post("/ingest/content")
     async def ingest_content(req: IngestContentRequest,
