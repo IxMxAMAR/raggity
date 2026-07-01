@@ -177,21 +177,13 @@ raggity reads the following file types out of the box:
 | `.md` | Markdown |
 | `.txt` | Plain text |
 | `.pdf` | Embedded text extraction via pypdf; falls back to OCR when text is absent |
-| `.docx` | Requires `raggity[docs]` |
-| `.html` | Requires `raggity[docs]` |
+| `.docx` | Word documents (base install) |
+| `.html` | HTML (base install) |
 | `.csv` | Parsed as key: value rows |
-| `.pptx` | Requires `raggity[docs]` |
+| `.pptx` | PowerPoint (base install) |
 | `.png`, `.jpg`, `.jpeg`, `.tiff`, `.bmp`, `.webp` | OCR via RapidOCR — requires `raggity[ocr]` |
 
-### Document extras
-
-Install optional readers with the `docs` extra:
-
-```bash
-pip install raggity[docs]
-```
-
-This adds support for `.docx`, `.html`, and `.pptx` files.
+Markdown, text, PDF, Word, HTML, CSV, and PowerPoint all work with a plain `pip install raggity`. Only image/scanned-PDF OCR needs an extra. For everything at once (OCR, web, Qdrant, server, GraphRAG, …): `pip install raggity[all]`.
 
 ### OCR extra
 

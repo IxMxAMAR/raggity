@@ -22,12 +22,12 @@ def _open_browser_delayed(url: str, delay: float = 1.2) -> None:
     t.daemon = True
     t.start()
 
-app = typer.Typer(help="raggity — local-first RAG over your notes, answered by Claude.")
+app = typer.Typer(help="raggity - local-first RAG over your notes, answered by Claude.")
 console = Console()
 
 _EMPTY_KB_HINT = (
     "[yellow]Knowledge base is empty.[/yellow] "
-    "Run [cyan]rag init[/cyan], set [sources] include patterns, "
+    r"Run [cyan]rag init[/cyan], set \[sources] include patterns, "
     "then [cyan]rag ingest[/cyan]."
 )
 _NO_CONFIG_HINT = (
@@ -49,7 +49,7 @@ def _rag(config: str | None) -> Raggity:
 
 
 _INIT_TEMPLATE = """\
-# raggity.toml — configuration for raggity
+# raggity.toml - configuration for raggity
 # Edit [sources] then run: rag ingest
 
 [sources]
@@ -93,14 +93,14 @@ def init(config: str = typer.Option(None, "--config")):
     from pathlib import Path as _Path  # noqa: PLC0415
     dest = _Path(config) if config else _Path.cwd() / "raggity.toml"
     if dest.exists():
-        console.print(f"[yellow]{dest.name} already exists — not overwriting.[/yellow]")
+        console.print(f"[yellow]{dest.name} already exists - not overwriting.[/yellow]")
         console.print(f"  Edit {dest} directly, then run [cyan]rag ingest[/cyan].")
         return
     dest.write_text(_INIT_TEMPLATE, encoding="utf-8")
     console.print(f"[green]Created[/green] {dest}")
     console.print("\nNext steps:")
-    console.print("  1. Edit [cyan]raggity.toml[/cyan] — set [sources] include patterns")
-    console.print("  2. Run [cyan]rag ingest[/cyan]  — index your files")
+    console.print(r"  1. Edit [cyan]raggity.toml[/cyan] - set \[sources] include patterns")
+    console.print("  2. Run [cyan]rag ingest[/cyan]  - index your files")
     console.print('  3. Run [cyan]rag ask "your question here"[/cyan]')
 
 
@@ -116,8 +116,8 @@ def ingest(config: str = typer.Option(None, "--config")):
     # Print install hints for any file types that need optional extras
     for extra, cnt in report.skipped_needs_extra.items():
         console.print(
-            f"[yellow]Skipped {cnt} file(s) needing raggity[{extra}] — "
-            f"install with:[/yellow] [cyan]pip install raggity[{extra}][/cyan]"
+            rf"[yellow]Skipped {cnt} file(s) needing raggity\[{extra}] - "
+            rf"install with:[/yellow] [cyan]pip install raggity\[{extra}][/cyan]"
         )
 
 
@@ -131,10 +131,10 @@ def ingest_url(
     try:
         from .connectors.web import WebConnector  # noqa: PLC0415
     except ImportError:
-        console.print("[red]ingest-url needs extra deps:[/red] pip install raggity[web]")
+        console.print(r"[red]ingest-url needs extra deps:[/red] pip install raggity\[web]")
         raise typer.Exit(1)
     rag = _rag(config)
-    console.print(f"Fetching [cyan]{url}[/cyan] (depth={depth})…")
+    console.print(f"Fetching [cyan]{url}[/cyan] (depth={depth})...")
     try:
         connector = WebConnector(url, depth=depth, same_domain=True)
         docs = connector.fetch()
@@ -157,7 +157,7 @@ def ingest_repo(
     """Shallow-clone a git repository and add all text files to the index."""
     from .connectors.github import GitHubConnector  # noqa: PLC0415
     rag = _rag(config)
-    console.print(f"Cloning [cyan]{url}[/cyan]" + (f" @ {ref}" if ref else "") + "…")
+    console.print(f"Cloning [cyan]{url}[/cyan]" + (f" @ {ref}" if ref else "") + "...")
     try:
         connector = GitHubConnector(url, ref=ref)
         docs = connector.fetch()
@@ -179,7 +179,7 @@ def ingest_obsidian(
     """Read all Markdown notes from an Obsidian vault and add them to the index."""
     from .connectors.obsidian import ObsidianConnector  # noqa: PLC0415
     rag = _rag(config)
-    console.print(f"Reading vault [cyan]{vault}[/cyan]…")
+    console.print(f"Reading vault [cyan]{vault}[/cyan]...")
     try:
         connector = ObsidianConnector(vault)
         docs = connector.fetch()
@@ -208,9 +208,9 @@ def graph_build(config: str = typer.Option(None, "--config")):
         raise typer.Exit(1)
     n = rag.store.count()
     if n == 0:
-        console.print("[yellow]Index is empty — run `rag ingest` first.[/yellow]")
+        console.print("[yellow]Index is empty - run `rag ingest` first.[/yellow]")
         raise typer.Exit(1)
-    console.print(f"Building graph from [cyan]{n}[/cyan] chunks (+{n} LLM calls)…")
+    console.print(f"Building graph from [cyan]{n}[/cyan] chunks (+{n} LLM calls)...")
     try:
         asyncio.run(rag.build_graph())
     except Exception as exc:
@@ -239,7 +239,7 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
     if decompose:
         if expand or hyde or step_back:
             typer.echo("note: --decompose overrides other query transforms", err=True)
-        typer.echo("Decomposing query (+model calls)…", err=True)
+        typer.echo("Decomposing query (+model calls)...", err=True)
         answer = rag.ask_decompose(question)
         if plain:
             typer.echo(answer.text)
@@ -247,13 +247,13 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
             console.print(answer.text)
     else:
         if expand or hyde or step_back:
-            typer.echo("Query transforms enabled (+model calls)…", err=True)
+            typer.echo("Query transforms enabled (+model calls)...", err=True)
         expand_arg = True if expand else None
         hyde_arg = True if hyde else None
         step_back_arg = True if step_back else None
         use_cache_arg = False if no_cache else None
         if plain or no_stream:
-            # Buffered path — honors cache (unless --no-cache)
+            # Buffered path - honors cache (unless --no-cache)
             answer = rag.ask(question, expand=expand_arg, hyde=hyde_arg, step_back=step_back_arg,
                              use_cache=use_cache_arg)
             if plain:
@@ -261,7 +261,7 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
             else:
                 console.print(answer.text)
         else:
-            # Streaming path — default; always calls the model (cache is buffered-only)
+            # Streaming path - default; always calls the model (cache is buffered-only)
             async def _stream():
                 final = None
                 async for piece in rag.aask_stream(question, expand=expand_arg,
@@ -292,7 +292,7 @@ def chat(config: str = typer.Option(None, "--config")):
     if rag.store.count() == 0:
         console.print(_EMPTY_KB_HINT)
     conversation = Conversation()
-    console.print("[green]raggity chat[/green] — type your question, 'exit' or Ctrl-D to quit.\n")
+    console.print("[green]raggity chat[/green] - type your question, 'exit' or Ctrl-D to quit.\n")
     while True:
         try:
             question = input("You: ").strip()
@@ -366,13 +366,13 @@ def eval_cmd(golden: str = typer.Argument(...),
     """Run free CPU retrieval metrics against a golden.jsonl set."""
     rag = _rag(config)
     if llm_judge:
-        typer.echo("Running LLM-judge eval (+2 model calls per question)…", err=True)
+        typer.echo("Running LLM-judge eval (+2 model calls per question)...", err=True)
         import asyncio
         from .evaluate import llm_judge as run_judge
         res = asyncio.run(run_judge(rag, load_golden(golden), rag.provider))
         console.print(f"Faithfulness={res.faithfulness:.3f}  "
                       f"AnswerRelevance={res.answer_relevance:.3f}  (n={res.n})")
-        console.print("(note: self-assessed — same model family generates and grades)")
+        console.print("(note: self-assessed - same model family generates and grades)")
     else:
         res = evaluate(rag.retriever, load_golden(golden), k=k)
         console.print(f"Hit@{k}={res.hit_rate:.3f}  MRR={res.mrr:.3f}  "
@@ -387,7 +387,7 @@ def watch(config: str = typer.Option(None, "--config"),
     try:
         from .watch import run_watch
     except ImportError:
-        console.print("[red]watch needs extra deps:[/red] pip install raggity[watch]")
+        console.print(r"[red]watch needs extra deps:[/red] pip install raggity\[watch]")
         raise typer.Exit(1)
     try:
         observer = run_watch(rag, rag.cfg.sources.include, debounce)
@@ -414,7 +414,7 @@ def serve(config: str = typer.Option(None, "--config"),
         import uvicorn
         from .server import create_app
     except ImportError:
-        console.print("[red]The server needs extra deps:[/red] pip install raggity[server]")
+        console.print(r"[red]The server needs extra deps:[/red] pip install raggity\[server]")
         raise typer.Exit(1)
     if open:
         try:
