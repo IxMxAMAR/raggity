@@ -224,3 +224,38 @@ def test_graph_build_succeeds(tmp_path, monkeypatch):
 def test_version_is_0_8_0():
     import raggity
     assert raggity.__version__ == "0.8.0"
+
+
+def test_init_creates_toml(tmp_path, monkeypatch):
+    """rag init writes a raggity.toml template when none exists."""
+    monkeypatch.chdir(tmp_path)
+    r = runner.invoke(cli_mod.app, ["init"])
+    assert r.exit_code == 0
+    cfg = tmp_path / "raggity.toml"
+    assert cfg.exists(), "raggity.toml was not created"
+    content = cfg.read_text()
+    assert "[sources]" in content
+    assert "include" in content
+    assert "[generation]" in content
+    # Next-steps guidance printed
+    assert "rag ingest" in r.output
+
+
+def test_init_refuses_to_overwrite(tmp_path, monkeypatch):
+    """rag init does not clobber an existing raggity.toml."""
+    monkeypatch.chdir(tmp_path)
+    cfg = tmp_path / "raggity.toml"
+    cfg.write_text("# existing\n")
+    r = runner.invoke(cli_mod.app, ["init"])
+    assert r.exit_code == 0
+    assert cfg.read_text() == "# existing\n", "existing file was overwritten"
+    assert "already exists" in r.output.lower()
+
+
+def test_init_custom_path(tmp_path):
+    """rag init --config <path> writes to that path."""
+    dest = tmp_path / "custom.toml"
+    r = runner.invoke(cli_mod.app, ["init", "--config", str(dest)])
+    assert r.exit_code == 0
+    assert dest.exists()
+    assert "[sources]" in dest.read_text()
