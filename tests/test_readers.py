@@ -156,3 +156,52 @@ def test_read_pdf_via_read_file(tmp_path):
     except Exception:
         dispatched = True  # raised from pypdf — dispatch DID happen
     assert dispatched, ".pdf was not dispatched (returned None as unknown ext)"
+
+
+def test_missing_dependency_error_is_runtime_error():
+    from raggity.readers import MissingDependencyError
+    err = MissingDependencyError(extra="ocr", message="needs ocr")
+    assert isinstance(err, RuntimeError)
+    assert err.extra == "ocr"
+
+
+def test_run_ocr_raises_missing_dep_error_not_plain_runtime(monkeypatch):
+    """_run_ocr raises MissingDependencyError(extra='ocr') when rapidocr absent."""
+    import sys
+    import raggity.readers as r
+    from raggity.readers import MissingDependencyError
+
+    orig = sys.modules.get("rapidocr_onnxruntime")
+    sys.modules["rapidocr_onnxruntime"] = None  # type: ignore[assignment]
+    r._ocr_engine_instance = None
+    try:
+        import pytest
+        with pytest.raises(MissingDependencyError) as exc_info:
+            r._run_ocr("irrelevant.png")
+        assert exc_info.value.extra == "ocr"
+    finally:
+        if orig is None:
+            sys.modules.pop("rapidocr_onnxruntime", None)
+        else:
+            sys.modules["rapidocr_onnxruntime"] = orig
+        r._ocr_engine_instance = None
+
+
+def test_ocr_pdf_raises_missing_dep_error(monkeypatch):
+    """_ocr_pdf raises MissingDependencyError(extra='ocr') when pypdfium2 absent."""
+    import sys
+    import raggity.readers as r
+    from raggity.readers import MissingDependencyError
+
+    orig = sys.modules.get("pypdfium2")
+    sys.modules["pypdfium2"] = None  # type: ignore[assignment]
+    try:
+        import pytest
+        with pytest.raises(MissingDependencyError) as exc_info:
+            r._ocr_pdf("irrelevant.pdf")
+        assert exc_info.value.extra == "ocr"
+    finally:
+        if orig is None:
+            sys.modules.pop("pypdfium2", None)
+        else:
+            sys.modules["pypdfium2"] = orig
