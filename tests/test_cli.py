@@ -219,3 +219,8 @@ def test_graph_build_succeeds(tmp_path, monkeypatch):
     assert "graph built" in r.output.lower()
     import os
     assert os.path.isfile(str(tmp_path / "idx" / "graph.json"))
+
+
+def test_version_is_0_8_0():
+    import raggity
+    assert raggity.__version__ == "0.8.0"
