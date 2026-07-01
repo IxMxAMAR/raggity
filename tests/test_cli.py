@@ -226,6 +226,66 @@ def test_version_is_0_8_0():
     assert raggity.__version__ == "0.8.0"
 
 
+def test_status_empty_kb_shows_hint(tmp_path):
+    """status with 0 chunks appends the init hint."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    cfg_path = tmp_path / "raggity.toml"
+    cfg_path.write_text(
+        f'[sources]\ninclude = ["{(notes / "*.md").as_posix()}"]\n'
+        f'[index]\npath = "{(tmp_path / "idx").as_posix()}"\n'
+    )
+    # Ingest nothing → 0 chunks
+    runner.invoke(cli_mod.app, ["ingest", "--config", str(cfg_path)])
+    r = runner.invoke(cli_mod.app, ["status", "--config", str(cfg_path)])
+    assert r.exit_code == 0
+    assert "rag init" in r.output or "rag ingest" in r.output
+
+
+def test_status_populated_kb_no_hint(tmp_path):
+    """status with chunks present must NOT show the empty-KB hint."""
+    cfg = _make_config(tmp_path)
+    runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
+    r = runner.invoke(cli_mod.app, ["status", "--config", cfg])
+    assert r.exit_code == 0
+    assert "rag init" not in r.output
+
+
+def test_ask_empty_kb_shows_hint_and_exits_0(tmp_path):
+    """ask with 0 chunks prints the hint and exits cleanly."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    cfg_path = tmp_path / "raggity.toml"
+    cfg_path.write_text(
+        f'[sources]\ninclude = ["{(notes / "*.md").as_posix()}"]\n'
+        f'[index]\npath = "{(tmp_path / "idx").as_posix()}"\n'
+    )
+    runner.invoke(cli_mod.app, ["ingest", "--config", str(cfg_path)])
+    r = runner.invoke(cli_mod.app, ["ask", "anything", "--config", str(cfg_path), "--plain"])
+    assert r.exit_code == 0
+    assert "rag init" in r.output or "rag ingest" in r.output
+
+
+def test_ask_no_config_file_shows_hint(tmp_path, monkeypatch):
+    """ask with no raggity.toml anywhere prints no-config hint."""
+    monkeypatch.chdir(tmp_path)  # no raggity.toml here
+    # Patch platformdirs so user config dir is also tmp_path (no toml there either)
+    import platformdirs
+    monkeypatch.setattr(platformdirs, "user_config_dir", lambda *a, **kw: str(tmp_path))
+    r = runner.invoke(cli_mod.app, ["ask", "anything", "--plain"])
+    # Should exit 0 and show a no-config hint (not crash)
+    assert r.exit_code == 0
+    assert "rag init" in r.output
+
+
+def test_ingest_no_config_file_shows_hint(tmp_path, monkeypatch):
+    """ingest with no raggity.toml prints the init hint."""
+    monkeypatch.chdir(tmp_path)
+    import platformdirs
+    monkeypatch.setattr(platformdirs, "user_config_dir", lambda *a, **kw: str(tmp_path))
+    r = runner.invoke(cli_mod.app, ["ingest"])
+    # exit code doesn't matter (may still run with defaults); the hint must appear
+    assert "rag init" in r.output
+
+
 def test_init_creates_toml(tmp_path, monkeypatch):
     """rag init writes a raggity.toml template when none exists."""
     monkeypatch.chdir(tmp_path)
