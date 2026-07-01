@@ -5,7 +5,7 @@ import threading
 import typer
 from rich.console import Console
 
-from .config import load_config
+from .config import load_config, _find_config_path
 from .core import Raggity, _run_async
 from .evaluate import evaluate, load_golden
 
@@ -24,6 +24,24 @@ def _open_browser_delayed(url: str, delay: float = 1.2) -> None:
 
 app = typer.Typer(help="raggity — local-first RAG over your notes, answered by Claude.")
 console = Console()
+
+_EMPTY_KB_HINT = (
+    "[yellow]Knowledge base is empty.[/yellow] "
+    "Run [cyan]rag init[/cyan], set [sources] include patterns, "
+    "then [cyan]rag ingest[/cyan]."
+)
+_NO_CONFIG_HINT = (
+    "[yellow]No raggity.toml found.[/yellow] "
+    "Run [cyan]rag init[/cyan] to create one."
+)
+
+
+def _check_no_config(config: str | None) -> bool:
+    """Return True (and print hint) when no config file is found."""
+    if _find_config_path(config) is None:
+        console.print(_NO_CONFIG_HINT)
+        return True
+    return False
 
 
 def _rag(config: str | None) -> Raggity:
@@ -89,11 +107,18 @@ def init(config: str = typer.Option(None, "--config")):
 @app.command()
 def ingest(config: str = typer.Option(None, "--config")):
     """Incrementally index configured source folders."""
+    _check_no_config(config)
     report = _rag(config).ingest()
     console.print(
         f"[green]Indexed.[/green] added={report.added} updated={report.updated} "
         f"deleted={report.deleted} unchanged={report.unchanged}"
     )
+    # Print install hints for any file types that need optional extras
+    for extra, cnt in report.skipped_needs_extra.items():
+        console.print(
+            f"[yellow]Skipped {cnt} file(s) needing raggity[{extra}] — "
+            f"install with:[/yellow] [cyan]pip install raggity[{extra}][/cyan]"
+        )
 
 
 @app.command(name="ingest-url")
@@ -205,7 +230,12 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
         no_cache: bool = typer.Option(False, "--no-cache")):
     """Ask a question against your knowledge base."""
     import asyncio
+    if _check_no_config(config):
+        raise typer.Exit(0)
     rag = _rag(config)
+    if rag.store.count() == 0:
+        console.print(_EMPTY_KB_HINT)
+        raise typer.Exit(0)
     if decompose:
         if expand or hyde or step_back:
             typer.echo("note: --decompose overrides other query transforms", err=True)
@@ -256,7 +286,11 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
 def chat(config: str = typer.Option(None, "--config")):
     """Start an interactive multi-turn chat REPL against your knowledge base."""
     from .conversation import Conversation  # noqa: PLC0415
+    if _check_no_config(config):
+        raise typer.Exit(0)
     rag = _rag(config)
+    if rag.store.count() == 0:
+        console.print(_EMPTY_KB_HINT)
     conversation = Conversation()
     console.print("[green]raggity chat[/green] — type your question, 'exit' or Ctrl-D to quit.\n")
     while True:
@@ -305,9 +339,12 @@ def chat(config: str = typer.Option(None, "--config")):
 @app.command()
 def status(config: str = typer.Option(None, "--config")):
     """Show index statistics."""
-    st = _rag(config).status()
+    rag = _rag(config)
+    st = rag.status()
     for k, v in st.items():
         console.print(f"{k}: {v}")
+    if rag.store.count() == 0:
+        console.print(_EMPTY_KB_HINT)
 
 
 @app.command()
