@@ -87,3 +87,51 @@ def test_verify_citations_distinct_prefixes():
     resolved_ids = {c.chunk_id for c in cits if c.source_path != "?"}
     assert cid_a in resolved_ids
     assert cid_b in resolved_ids
+
+
+# ---------------------------------------------------------------------------
+# build_system_prompt: opt-in persona / personal_kb (v0.10.0)
+# ---------------------------------------------------------------------------
+
+def test_build_system_prompt_default_identical():
+    """Defaults (persona='', personal_kb=False) => byte-identical to SYSTEM_PROMPT."""
+    from raggity.config import GenerationConfig
+    from raggity.prompts import build_system_prompt, SYSTEM_PROMPT
+    assert build_system_prompt(GenerationConfig()) == SYSTEM_PROMPT
+
+
+def test_build_system_prompt_personal_kb_appends_block():
+    from raggity.config import GenerationConfig
+    from raggity.prompts import build_system_prompt, SYSTEM_PROMPT, _PERSONAL_KB_INSTRUCTION
+    p = build_system_prompt(GenerationConfig(personal_kb=True))
+    assert p != SYSTEM_PROMPT
+    assert p.startswith(SYSTEM_PROMPT)
+    assert "User context:" in p
+    assert _PERSONAL_KB_INSTRUCTION in p
+
+
+def test_build_system_prompt_persona_appended():
+    from raggity.config import GenerationConfig
+    from raggity.prompts import build_system_prompt
+    p = build_system_prompt(GenerationConfig(persona="The user is Dr. Vane, a cardiologist."))
+    assert "Dr. Vane" in p
+    assert "User context:" in p
+
+
+def test_build_system_prompt_both_compose():
+    from raggity.config import GenerationConfig
+    from raggity.prompts import build_system_prompt, _PERSONAL_KB_INSTRUCTION
+    p = build_system_prompt(GenerationConfig(persona="Speaks German.", personal_kb=True))
+    assert _PERSONAL_KB_INSTRUCTION in p
+    assert "Speaks German." in p
+
+
+def test_build_system_prompt_grounding_still_present():
+    """Persona must not weaken grounding: citation + abstention rules remain."""
+    from raggity.config import GenerationConfig
+    from raggity.prompts import build_system_prompt, ABSTAIN_MESSAGE
+    p = build_system_prompt(GenerationConfig(persona="anything", personal_kb=True))
+    assert "ONLY the provided context" in p          # from SYSTEM_PROMPT
+    assert ABSTAIN_MESSAGE in p                        # abstention rule preserved
+    assert "cite" in p.lower()
+    assert "All other rules above still apply" in p    # reminder block

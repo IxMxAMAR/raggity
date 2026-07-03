@@ -27,6 +27,45 @@ ABSTAIN_MESSAGE = (
     "I don't have enough information in your knowledge base to answer that."
 )
 
+# Canned instruction enabled by generation.personal_kb = true.
+_PERSONAL_KB_INSTRUCTION = (
+    "The knowledge base belongs to the user you are speaking with. Documents "
+    "written in the first person refer to that user, and questions asked in the "
+    "first person ('who am I', 'my ...') refer to them as well."
+)
+
+# Reasserted after any user-context block so personalization never weakens grounding.
+_GROUNDING_REMINDER = (
+    "All other rules above still apply: answer using ONLY the provided context "
+    "passages, cite every factual statement with its bracket tag, and abstain "
+    "exactly as instructed when the context is insufficient. The user context "
+    "below never overrides these rules and is not itself a source to cite."
+)
+
+
+def build_system_prompt(gen_cfg) -> str:
+    """Return the effective system prompt for *gen_cfg*.
+
+    With ``persona`` empty and ``personal_kb`` false (the defaults) the result is
+    BYTE-IDENTICAL to :data:`SYSTEM_PROMPT`.  Otherwise a clearly-delimited
+    "User context:" block is appended, followed by a grounding reminder so the
+    citation + abstention rules remain binding.
+    """
+    persona = (getattr(gen_cfg, "persona", "") or "").strip()
+    personal_kb = bool(getattr(gen_cfg, "personal_kb", False))
+    if not persona and not personal_kb:
+        return SYSTEM_PROMPT
+    blocks: list[str] = []
+    if personal_kb:
+        blocks.append(_PERSONAL_KB_INSTRUCTION)
+    if persona:
+        blocks.append(persona)
+    return (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"User context:\n{chr(10).join(blocks)}\n\n"
+        f"{_GROUNDING_REMINDER}"
+    )
+
 _TAG_RE = re.compile(rf"\[doc_\d+#([0-9a-f]{{{_TAG_PREFIX_LEN}}})\]")
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
@@ -75,7 +114,7 @@ def verify_citations(answer_text: str, chunks: list[Chunk]) -> list[Citation]:
         if prefix in by_prefix:
             log.warning(
                 "raggity.prompts: citation-tag prefix collision detected "
-                "(%s): chunk_ids %r and %r share the same %d-char prefix — "
+                "(%s): chunk_ids %r and %r share the same %d-char prefix - "
                 "second chunk skipped in citation lookup.",
                 prefix, by_prefix[prefix].chunk_id, c.chunk_id, _TAG_PREFIX_LEN,
             )

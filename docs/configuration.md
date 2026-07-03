@@ -171,6 +171,10 @@ cache = false
 # backend = "ollama"
 # model = "llama3.1"
 # base_url = "http://localhost:11434/v1"
+
+# Opt-in personalization (default off). See "Personalization" below.
+# persona = "The user is Dr. Vane, a cardiologist. Prefer clinical phrasing."
+# personal_kb = false
 ```
 
 | Key | Default | Description |
@@ -178,10 +182,35 @@ cache = false
 | `backend` | `"claude"` | LLM backend: `"claude"`, `"openai"`, or `"ollama"` |
 | `model` | `"claude-opus-4-8"` | Model name (backend-specific) |
 | `auth` | `"auto"` | Claude auth mode: `"auto"`, `"subscription"`, or `"api_key"` |
-| `cache` | `false` | Semantic answer cache (keyed on question + chunks + model) |
+| `cache` | `false` | Semantic answer cache (keyed on question + chunks + model + effective system prompt) |
 | `temperature` | `null` | Generation temperature passed to the model (null = use model default) |
 | `base_url` | varies | OpenAI-compatible base URL |
 | `api_key_env` | `"OPENAI_API_KEY"` | Env var name holding the API key (OpenAI/Ollama backends) |
+| `auto_start` | `true` | Auto-start a local backend (e.g. ollama) on first use when a runtime binary is found and the server is not already running |
+| `persona` | `""` | Free-form user context appended to the system prompt (grounding rules still bind). Empty = system prompt unchanged |
+| `personal_kb` | `false` | Treat the knowledge base as the current user's own (first-person docs/questions refer to them) |
+
+### Personalization
+
+`persona` and `personal_kb` are **opt-in** and off by default; with both unset the
+system prompt is byte-identical to the stock one. When set, their content is
+appended to the system prompt as a clearly-delimited **User context:** block,
+followed by a reminder that the citation + abstention rules still apply — the
+model must still answer only from the retrieved context and cite every claim.
+Toggling either value changes the answer-cache key, so cached answers are
+invalidated automatically.
+
+### Local providers: discovery & auto-start
+
+`rag model --list` probes known local runtimes (ollama, lmstudio, llamacpp,
+vllm, jan, koboldcpp) and prints which are running, installed, and what models
+they expose — copy-pasteable into `rag model <model> -p <provider>`. Local
+OpenAI-compatible runtimes map to `backend = "openai"` plus the runtime's
+default `base_url` (no API key required for a loopback server); `ollama` keeps
+`backend = "ollama"`. With `auto_start = true`, an `ollama` backend is started
+on first request if the `ollama` binary is found and the server is not already
+up. `rag doctor` reports the full discovery table and, for ollama, will start
+the server and check that the configured model is pulled.
 
 ---
 

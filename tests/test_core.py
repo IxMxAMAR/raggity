@@ -574,3 +574,31 @@ def test_transform_cache_hit_skips_second_expand_call(tmp_path, monkeypatch):
     rag.ask("how are backups done?")
     rag.ask("how are backups done?")  # same question → transform-cache hit
     assert expand_calls["n"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Persona: effective system prompt wiring + cache-key invalidation (v0.10.0)
+# ---------------------------------------------------------------------------
+
+def test_core_system_prompt_default_and_persona():
+    from raggity.core import Raggity
+    from raggity.config import RaggityConfig, GenerationConfig
+    from raggity.prompts import SYSTEM_PROMPT
+    assert Raggity(RaggityConfig()).system_prompt == SYSTEM_PROMPT
+    rag = Raggity(RaggityConfig(generation=GenerationConfig(persona="I am Alex.")))
+    assert "I am Alex." in rag.system_prompt
+    # The answerer built by the Raggity must carry the effective prompt.
+    assert rag.answerer.system_prompt == rag.system_prompt
+
+
+def test_cache_key_changes_when_persona_toggles():
+    """Answer-cache key must include the EFFECTIVE (persona-included) prompt."""
+    from raggity.cache import cache_key
+    from raggity.core import Raggity
+    from raggity.config import RaggityConfig, GenerationConfig
+    plain = Raggity(RaggityConfig())
+    persona = Raggity(RaggityConfig(generation=GenerationConfig(persona="I am Alex.")))
+    ids = ["c1", "c2"]
+    k_plain = cache_key("q", ids, "m", system_prompt=plain.system_prompt)
+    k_persona = cache_key("q", ids, "m", system_prompt=persona.system_prompt)
+    assert k_plain != k_persona

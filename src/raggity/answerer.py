@@ -28,8 +28,9 @@ class Answerer(ABC):
 
 
 class ProviderAnswerer(Answerer):
-    def __init__(self, provider: LLMProvider) -> None:
+    def __init__(self, provider: LLMProvider, system_prompt: str = SYSTEM_PROMPT) -> None:
         self.provider = provider
+        self.system_prompt = system_prompt
 
     async def answer(
         self,
@@ -40,7 +41,7 @@ class ProviderAnswerer(Answerer):
         if not chunks:
             return Answer(text=ABSTAIN_MESSAGE, citations=[], abstained=True)
         prompt = build_user_prompt(question, chunks, history=history)
-        text = (await self.provider.complete(SYSTEM_PROMPT, prompt)).strip()
+        text = (await self.provider.complete(self.system_prompt, prompt)).strip()
         abst = text == ABSTAIN_MESSAGE
         return Answer(text=text, citations=[] if abst else verify_citations(text, chunks), abstained=abst)
 
@@ -57,7 +58,7 @@ class ProviderAnswerer(Answerer):
             return
         prompt = build_user_prompt(question, chunks, history=history)
         parts: list[str] = []
-        async for t in self.provider.stream(SYSTEM_PROMPT, prompt):
+        async for t in self.provider.stream(self.system_prompt, prompt):
             parts.append(t)
             yield t
         text = "".join(parts).strip()

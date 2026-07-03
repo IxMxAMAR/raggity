@@ -176,6 +176,23 @@ export ANTHROPIC_API_KEY=sk-ant-...   # API key
 
 With `server.auth = "api_key"` and `server.per_user = true`, each API key gets its own **isolated index namespace** and its own **session namespace** — one tenant can never read, continue, or delete another tenant's conversations or documents. Tenants ingest their own content via `POST /ingest/content`. Per-tenant `Raggity` instances are cached with an LRU bound (`server.max_user_rags`, default 128) and closed on eviction/shutdown.
 
+#### Per-tenant personas
+
+`server.personas` maps an API key to a persona string that is applied to that
+tenant's `generation.persona` before its `Raggity` is constructed — so each
+tenant's answers are personalized to them, while grounding/citation rules still
+apply. Keys without an entry get the default (persona-free) system prompt.
+
+```toml
+[server]
+auth = "api_key"
+per_user = true
+api_keys = ["key_alice", "key_bob"]
+
+[server.personas]
+key_alice = "The user is Alice, a maritime lawyer. Prefer precise legal phrasing."
+```
+
 ---
 
 ## Terminal chat REPL

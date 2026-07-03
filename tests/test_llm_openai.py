@@ -132,3 +132,48 @@ def test_ollama_from_config_missing_key_ok(monkeypatch):
     cfg = GenerationConfig(backend="ollama", model="llama3.1")
     p = lo.OpenAICompatProvider.from_config(cfg)
     assert p is not None
+
+
+def test_openai_local_base_url_needs_no_key(monkeypatch):
+    """backend=openai with a localhost base_url (lmstudio/etc.) must NOT require a key."""
+    from raggity.config import GenerationConfig
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    cfg = GenerationConfig(backend="openai", model="qwen2.5",
+                           base_url="http://localhost:1234/v1")
+    p = lo.OpenAICompatProvider.from_config(cfg)  # must not raise
+    assert p is not None
+
+
+def test_openai_remote_base_url_still_requires_key(monkeypatch):
+    from raggity.config import GenerationConfig
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    cfg = GenerationConfig(backend="openai", model="gpt-4o-mini",
+                           base_url="https://api.openai.com/v1")
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        lo.OpenAICompatProvider.from_config(cfg)
+
+
+def test_ollama_provider_lazy_ensure_runs_once(monkeypatch):
+    """First complete() triggers providers.ensure_running once; second does not."""
+    import asyncio
+    from raggity.config import GenerationConfig
+    from raggity import providers
+    calls = []
+    monkeypatch.setattr(providers, "ensure_running", lambda *a, **k: calls.append(a) or True)
+
+    cfg = GenerationConfig(backend="ollama", model="llama3.1")
+    p = lo.OpenAICompatProvider.from_config(cfg)
+
+    async def _fake_create(**kwargs):
+        class _Msg:
+            content = "hi"
+        class _Choice:
+            message = _Msg()
+        class _R:
+            choices = [_Choice()]
+        return _R()
+
+    monkeypatch.setattr(p._client.chat.completions, "create", _fake_create)
+    asyncio.run(p.complete("s", "u"))
+    asyncio.run(p.complete("s", "u"))
+    assert len(calls) == 1  # ensured exactly once (cached via _ensured flag)

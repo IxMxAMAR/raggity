@@ -145,7 +145,8 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
                 user_rags.move_to_end(identity)
                 return user_rags[identity]
             base_rag: Raggity = state["rag"]
-            rag = await asyncio.to_thread(base_rag.for_namespace, identity)
+            persona = cfg.server.personas.get(identity)
+            rag = await asyncio.to_thread(base_rag.for_namespace, identity, persona)
             user_rags[identity] = rag
             # Evict LRU on overflow.
             while len(user_rags) > cfg.server.max_user_rags:

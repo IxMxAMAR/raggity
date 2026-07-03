@@ -149,8 +149,17 @@ class Raggity:
         return self._lazy("_provider", _factory)
 
     @property
+    def system_prompt(self) -> str:
+        """Effective system prompt (persona/personal_kb applied; default identical)."""
+        from .prompts import build_system_prompt
+        return build_system_prompt(self.cfg.generation)
+
+    @property
     def answerer(self):
-        return self._lazy("_answerer", lambda: ProviderAnswerer(self.provider))
+        return self._lazy(
+            "_answerer",
+            lambda: ProviderAnswerer(self.provider, self.system_prompt),
+        )
 
     @property
     def retriever(self):
@@ -179,13 +188,15 @@ class Raggity:
             slug = hashlib.sha256(ns.encode()).hexdigest()[:8]
         return slug
 
-    def for_namespace(self, ns: str) -> "Raggity":
+    def for_namespace(self, ns: str, persona: str | None = None) -> "Raggity":
         """Return a *new* :class:`Raggity` whose index is namespaced for *ns*.
 
         The returned instance uses a deep copy of this config with:
         - ``index.path`` → ``<base>/users/<slug>``   (LanceDB)
         - ``index.qdrant_collection`` → ``<base_collection>_<slug>``
 
+        When *persona* is given it is applied to the tenant's ``generation.persona``
+        BEFORE construction, so the tenant's answerer/system prompt reflect it.
         The original instance (``self``) is never mutated.  Suitable for
         per-user multi-tenancy in the server.
         """
@@ -193,6 +204,8 @@ class Raggity:
         new_cfg = self.cfg.model_copy(deep=True)
         new_cfg.index.path = os.path.join(self.cfg.index.path, "users", slug)
         new_cfg.index.qdrant_collection = f"{self.cfg.index.qdrant_collection}_{slug}"
+        if persona is not None:
+            new_cfg.generation.persona = persona
         # Share heavy models with this base instance (cheap tenant construction).
         return Raggity(new_cfg, _shared_from=self)
 
@@ -474,13 +487,13 @@ class Raggity:
                     graph_chunk_ids=graph_ids or None)
         if use_cache:
             from . import cache as _cache
-            from .prompts import SYSTEM_PROMPT as _SYSTEM_PROMPT
-            # Lazy-create the lock inside the running loop
+            # Key on the EFFECTIVE system prompt (persona-included) so toggling
+            # persona/personal_kb invalidates previously cached answers.
             if self._cache_lock is None:
                 self._cache_lock = asyncio.Lock()
             key = _cache.cache_key(
                 question, [c.chunk_id for c in chunks],
-                self.cfg.generation.model, system_prompt=_SYSTEM_PROMPT,
+                self.cfg.generation.model, system_prompt=self.system_prompt,
             )
             # Narrowed lock: check under lock, GENERATE OUTSIDE the lock (so
             # concurrent distinct-question generations do not serialize), then

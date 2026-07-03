@@ -333,3 +333,113 @@ def test_init_custom_path(tmp_path):
     assert r.exit_code == 0
     assert dest.exists()
     assert "[sources]" in dest.read_text()
+
+
+# ---------------------------------------------------------------------------
+# rag model - switch generation backend/model (v0.10.0)
+# ---------------------------------------------------------------------------
+
+def test_model_no_arg_shows_current(tmp_path):
+    dest = tmp_path / "raggity.toml"
+    dest.write_text('[generation]\nbackend = "ollama"\nmodel = "gemma3"\n'
+                    'base_url = "http://localhost:11434/v1"\n')
+    r = runner.invoke(cli_mod.app, ["model", "--config", str(dest)])
+    assert r.exit_code == 0
+    assert "backend=ollama" in r.output and "model=gemma3" in r.output
+    assert "base_url=" in r.output
+
+
+def test_model_switch_edits_model_and_backend(tmp_path):
+    dest = tmp_path / "raggity.toml"
+    dest.write_text('[generation]\nmodel = "claude-opus-4-8"\n')
+    r = runner.invoke(cli_mod.app, ["model", "gemma3", "-p", "ollama", "--config", str(dest)])
+    assert r.exit_code == 0
+    import tomllib
+    data = tomllib.loads(dest.read_text())
+    assert data["generation"]["model"] == "gemma3"
+    assert data["generation"]["backend"] == "ollama"
+    assert "ollama pull gemma3" in r.output  # ollama hint
+
+
+def test_model_anthropic_alias_maps_to_claude(tmp_path):
+    dest = tmp_path / "raggity.toml"
+    dest.write_text('[generation]\nmodel = "x"\n')
+    r = runner.invoke(cli_mod.app, ["model", "claude-opus-4-8", "-p", "anthropic",
+                                    "--config", str(dest)])
+    assert r.exit_code == 0
+    import tomllib
+    assert tomllib.loads(dest.read_text())["generation"]["backend"] == "claude"
+
+
+def test_model_model_only_leaves_backend(tmp_path):
+    dest = tmp_path / "raggity.toml"
+    dest.write_text('[generation]\nbackend = "ollama"\nmodel = "old"\n')
+    r = runner.invoke(cli_mod.app, ["model", "newmodel", "--config", str(dest)])
+    assert r.exit_code == 0
+    import tomllib
+    data = tomllib.loads(dest.read_text())
+    assert data["generation"]["model"] == "newmodel"
+    assert data["generation"]["backend"] == "ollama"  # unchanged
+
+
+def test_model_preserves_template_comments(tmp_path, monkeypatch):
+    """Editing a comment-rich init template must keep its comments (tomlkit)."""
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(cli_mod.app, ["init"])
+    dest = tmp_path / "raggity.toml"
+    assert "# Edit [sources] then run" in dest.read_text()  # sanity: comment present
+    r = runner.invoke(cli_mod.app, ["model", "gemma3", "-p", "ollama"])
+    assert r.exit_code == 0
+    after = dest.read_text()
+    assert "# Edit [sources] then run" in after  # comment survived the edit
+    import tomllib
+    assert tomllib.loads(after)["generation"]["model"] == "gemma3"
+
+
+def test_model_missing_file_creates_then_applies(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    import platformdirs
+    monkeypatch.setattr(platformdirs, "user_config_dir", lambda *a, **kw: str(tmp_path / "nope"))
+    r = runner.invoke(cli_mod.app, ["model", "gemma3", "-p", "ollama"])
+    assert r.exit_code == 0
+    assert "Created" in r.output
+    dest = tmp_path / "raggity.toml"
+    assert dest.exists()
+    import tomllib
+    data = tomllib.loads(dest.read_text())
+    assert data["generation"]["model"] == "gemma3"
+    assert data["generation"]["backend"] == "ollama"
+
+
+def test_model_invalid_provider_exits_1(tmp_path):
+    dest = tmp_path / "raggity.toml"
+    dest.write_text('[generation]\nmodel = "x"\n')
+    r = runner.invoke(cli_mod.app, ["model", "m", "-p", "bogus", "--config", str(dest)])
+    assert r.exit_code == 1
+    assert "Invalid provider" in r.output
+
+
+def test_model_local_alias_writes_openai_backend_and_base_url(tmp_path):
+    dest = tmp_path / "raggity.toml"
+    dest.write_text('[generation]\nmodel = "x"\n')
+    r = runner.invoke(cli_mod.app, ["model", "qwen2.5", "-p", "lmstudio", "--config", str(dest)])
+    assert r.exit_code == 0
+    import tomllib
+    data = tomllib.loads(dest.read_text())
+    assert data["generation"]["backend"] == "openai"
+    assert data["generation"]["base_url"] == "http://localhost:1234/v1"
+
+
+def test_model_list_renders_table(monkeypatch):
+    import raggity.providers as prov
+    fake = [
+        prov.ProviderStatus(name="ollama", base_url="http://localhost:11434/v1",
+                            running=True, installed=True, models=["gemma3"], auto_startable=True),
+        prov.ProviderStatus(name="lmstudio", base_url="http://localhost:1234/v1",
+                            running=False, installed=False, models=[], auto_startable=False),
+    ]
+    monkeypatch.setattr(prov, "discover", lambda: fake)
+    r = runner.invoke(cli_mod.app, ["model", "--list"])
+    assert r.exit_code == 0
+    assert "ollama" in r.output and "lmstudio" in r.output
+    assert "gemma3" in r.output

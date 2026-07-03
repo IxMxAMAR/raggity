@@ -790,3 +790,69 @@ def test_sse_stream_error_no_traceback(tmp_path, monkeypatch):
         assert "event: error" in body
         assert "SECRET-INTERNAL-DETAIL" not in body
         assert "Traceback" not in body
+
+
+# ---------------------------------------------------------------------------
+# Per-tenant persona (v0.10.0): server.personas[key] reaches the tenant answerer
+# ---------------------------------------------------------------------------
+
+def test_per_tenant_persona_reaches_answerer(tmp_path, monkeypatch):
+    """server.personas maps an API key -> persona; the tenant's LLM call must
+    receive that persona in its (effective) system prompt."""
+    from raggity.server import create_app
+    from raggity.config import RaggityConfig, SourcesConfig, IndexConfig, ServerConfig, GenerationConfig
+    import raggity.llm as llm_mod
+
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[]),
+        index=IndexConfig(path=str(tmp_path / "base")),
+        generation=GenerationConfig(),
+        server=ServerConfig(auth="api_key", api_keys=["key_alice", "key_bob"],
+                            per_user=True,
+                            personas={"key_alice": "The user is Alice, a maritime lawyer."}),
+    )
+    app = create_app(cfg)
+    captured = {}
+
+    async def _fake_query(prompt, options):
+        captured["system_prompt"] = getattr(options, "system_prompt", None)
+        yield _AssistantMessage("Answer [doc_1#00000000].")
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    with TestClient(app) as client:
+        _ingest_doc(client, "key_alice", "Alice exclusive: the sky is green.", tmp_path, "persona_doc")
+        r = client.post("/ask", json={"question": "what colour is the sky?"},
+                        headers={"X-API-Key": "key_alice"})
+        assert r.status_code == 200
+        assert "maritime lawyer" in (captured.get("system_prompt") or "")
+
+
+def test_persona_absent_for_other_tenant(tmp_path, monkeypatch):
+    """A key without a personas entry gets the default (persona-free) prompt."""
+    from raggity.server import create_app
+    from raggity.config import RaggityConfig, SourcesConfig, IndexConfig, ServerConfig
+    import raggity.llm as llm_mod
+
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[]),
+        index=IndexConfig(path=str(tmp_path / "base")),
+        server=ServerConfig(auth="api_key", api_keys=["key_alice", "key_bob"],
+                            per_user=True,
+                            personas={"key_alice": "The user is Alice."}),
+    )
+    app = create_app(cfg)
+    captured = {}
+
+    async def _fake_query(prompt, options):
+        captured["system_prompt"] = getattr(options, "system_prompt", None)
+        yield _AssistantMessage("Answer [doc_1#00000000].")
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    with TestClient(app) as client:
+        _ingest_doc(client, "key_bob", "Bob exclusive: the sea is purple.", tmp_path, "persona_doc2")
+        r = client.post("/ask", json={"question": "what colour is the sea?"},
+                        headers={"X-API-Key": "key_bob"})
+        assert r.status_code == 200
+        assert "User context:" not in (captured.get("system_prompt") or "")

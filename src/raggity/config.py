@@ -62,6 +62,15 @@ class GenerationConfig(BaseModel):
     base_url: str | None = None
     api_key_env: str = "OPENAI_API_KEY"
     temperature: float | None = None
+    # When true, a local backend (e.g. ollama) is auto-started on first use if a
+    # runtime binary is found and the server is not already reachable.
+    auto_start: bool = True
+    # Opt-in personalization (default off = system prompt byte-identical to today).
+    # Free-form persona text appended to the system prompt as user context.
+    persona: str = ""
+    # When true, tells the model the knowledge base belongs to the current user
+    # (first-person docs/questions refer to them).  Grounding rules still bind.
+    personal_kb: bool = False
 
 
 class IndexConfig(BaseModel):
@@ -83,6 +92,9 @@ class ServerConfig(BaseModel):
     # Bound on the per-identity Raggity LRU cache (multi-tenant only).  When the
     # cache exceeds this, the least-recently-used Raggity is evicted and closed.
     max_user_rags: int = 128
+    # Optional per-tenant persona text, keyed by API key (identity).  Applied to
+    # that tenant's generation config before its Raggity is constructed.
+    personas: dict[str, str] = Field(default_factory=dict)
 
 
 class ObservabilityConfig(BaseModel):

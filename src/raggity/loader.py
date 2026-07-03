@@ -188,7 +188,7 @@ def load_paths(candidates: list[str], manifest: dict[str, dict]) -> LoadResult:
         try:
             text = read_file(posix_path)
         except MissingDependencyError as exc:
-            log.warning("skipping %s — missing extra '%s': %s", posix_path, exc.extra, exc)
+            log.warning("skipping %s - missing extra '%s': %s", posix_path, exc.extra, exc)
             result.skipped_needs_extra[exc.extra] = (
                 result.skipped_needs_extra.get(exc.extra, 0) + 1
             )

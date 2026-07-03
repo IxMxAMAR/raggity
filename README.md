@@ -158,6 +158,10 @@ Both `rag` and `raggity` are registered as console scripts — they are identica
 | `rag serve` | Start the local HTTP API server |
 | `rag serve --open` | Start the server and open the web chat UI in your default browser |
 | `rag status` | Show index statistics (chunk count, source count, index path) |
+| `rag model` | Show the current generation backend/model (no args) |
+| `rag model <name> -p <provider>` | Switch backend/model in `raggity.toml` (comment-preserving); providers: `claude`/`anthropic`/`openai`/`ollama`/`lmstudio`/`llamacpp`/`vllm`/`jan`/`koboldcpp` |
+| `rag model --list` | List discovered local LLM providers (running / installed / models) |
+| `rag doctor` | Run environment diagnostics (config, index, embedding, generation backend, providers) |
 | `rag reindex --force` | Wipe and rebuild the index from scratch |
 | `rag eval golden.jsonl` | Run retrieval quality metrics (Hit@k, MRR, Recall@k) against a golden set |
 | `rag eval golden.jsonl --llm-judge` | LLM-judge eval: faithfulness + answer relevance (2 model calls per question; self-assessed) |

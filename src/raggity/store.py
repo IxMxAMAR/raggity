@@ -127,7 +127,7 @@ class LanceDBStore(VectorStore):
                 self._tbl.create_fts_index("text", use_tantivy=False, replace=True)
             except Exception:
                 log.warning(
-                    "raggity.store: could not build FTS (BM25) index — "
+                    "raggity.store: could not build FTS (BM25) index - "
                     "hybrid search will degrade to dense-only."
                 )
             self._fts_ready = True
@@ -190,7 +190,7 @@ class LanceDBStore(VectorStore):
             rows = (self._tbl.search(query, query_type="fts")
                     .limit(limit).to_list())
         except Exception:
-            log.warning("raggity.store: FTS query failed — returning empty result.")
+            log.warning("raggity.store: FTS query failed - returning empty result.")
             return []
         out = []
         for r in rows:
@@ -256,7 +256,7 @@ class LanceDBStore(VectorStore):
             if n > _FALLBACK_CAP:
                 log.warning(
                     "raggity.store: get_by_chunk_ids primary path failed; fallback scan "
-                    "capped at %d rows (%d total) — some results may be missing.",
+                    "capped at %d rows (%d total) - some results may be missing.",
                     _FALLBACK_CAP, n,
                 )
             id_set = set(ids)
@@ -286,7 +286,7 @@ class LanceDBStore(VectorStore):
             # failed, but we do NOT cap here (truncating would break the graph).
             log.warning(
                 "raggity.store: all_chunks primary path failed; falling back to "
-                "search().limit(%d) — upgrade lancedb if this persists.", n,
+                "search().limit(%d) - upgrade lancedb if this persists.", n,
             )
             rows = self._tbl.search().limit(n).to_list()
         return [_row_to_chunk(r) for r in rows]

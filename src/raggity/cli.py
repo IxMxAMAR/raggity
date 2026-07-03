@@ -87,6 +87,11 @@ top_k = 5        # chunks passed to the LLM
 # Or: export ANTHROPIC_API_KEY=sk-ant-...
 auth = "auto"
 model = "claude-opus-4-8"
+# Opt-in personalization (off by default). persona: free-form text appended to
+# the system prompt as user context; personal_kb: treat the KB as the current
+# user's own (first-person docs/questions refer to them). Grounding rules still apply.
+# persona = ""
+# personal_kb = false
 
 [index]
 path = ".raggity/index"
@@ -108,6 +113,108 @@ def init(config: str = typer.Option(None, "--config")):
     console.print(r"  1. Edit [cyan]raggity.toml[/cyan] - set \[sources] include patterns")
     console.print("  2. Run [cyan]rag ingest[/cyan]  - index your files")
     console.print('  3. Run [cyan]rag ask "your question here"[/cyan]')
+
+
+def _print_provider_table(statuses) -> None:
+    """Render discovered local providers as a Rich table."""
+    from rich.table import Table  # noqa: PLC0415
+    table = Table(title="Local LLM providers")
+    table.add_column("provider")
+    table.add_column("status")
+    table.add_column("models")
+    for st in statuses:
+        if st.running:
+            status = "[green]running[/green]"
+        elif st.installed:
+            status = "[yellow]installed (not running)[/yellow]"
+        else:
+            status = "[dim]not found[/dim]"
+        if st.auto_startable and not st.running:
+            status += " [dim](auto-startable)[/dim]"
+        models = ", ".join(st.models[:6]) if st.models else "-"
+        if st.models and len(st.models) > 6:
+            models += ", ..."
+        table.add_row(st.name, status, models)
+    console.print(table)
+
+
+@app.command()
+def model(
+    model_name: str = typer.Argument(None, help="Model name to switch to (omit to show current)."),
+    provider: str = typer.Option(None, "--provider", "-p",
+                                 help="claude|anthropic|openai|ollama|lmstudio|llamacpp|vllm|jan|koboldcpp"),
+    list_providers: bool = typer.Option(False, "--list",
+                                        help="List discovered local LLM providers and exit."),
+    config: str = typer.Option(None, "--config"),
+):
+    """Show or switch the generation backend/model in raggity.toml."""
+    from pathlib import Path as _Path  # noqa: PLC0415
+    from . import providers  # noqa: PLC0415
+
+    if list_providers:
+        _print_provider_table(providers.discover())
+        return
+
+    if model_name is None:
+        gen = load_config(config).generation
+        line = f"generation: backend={gen.backend} model={gen.model}"
+        if gen.base_url:
+            line += f" base_url={gen.base_url}"
+        console.print(line)
+        return
+
+    if provider is not None and provider not in providers.BACKEND_ALIASES:
+        console.print(
+            f"[red]Invalid provider {provider!r}.[/red] Choices: "
+            + ", ".join(providers.BACKEND_ALIASES)
+        )
+        raise typer.Exit(1)
+
+    import tomlkit  # noqa: PLC0415
+    target = _Path(config) if config else (_find_config_path(None) or _Path.cwd() / "raggity.toml")
+    created = False
+    if not target.exists():
+        target.write_text(_INIT_TEMPLATE, encoding="utf-8")
+        created = True
+
+    doc = tomlkit.parse(target.read_text(encoding="utf-8"))
+    gen = doc.get("generation")
+    if gen is None:
+        gen = tomlkit.table()
+        doc["generation"] = gen
+    gen["model"] = model_name
+    if provider is not None:
+        backend, base_url = providers.BACKEND_ALIASES[provider]
+        gen["backend"] = backend
+        if base_url is not None:
+            gen["base_url"] = base_url
+    target.write_text(tomlkit.dumps(doc), encoding="utf-8")
+
+    if created:
+        console.print(f"[green]Created[/green] {target.name}")
+    eff_backend = gen.get("backend", "claude")
+    eff_model = gen.get("model")
+    eff_base = gen.get("base_url")
+    line = f"generation: backend={eff_backend} model={eff_model}"
+    if eff_base:
+        line += f" base_url={eff_base}"
+    console.print(f"[green]{line}[/green]")
+    if eff_backend == "ollama":
+        console.print(
+            "[dim]ollama base_url defaults to http://localhost:11434/v1; "
+            f"pull the model first: ollama pull {eff_model}[/dim]"
+        )
+    elif provider in ("lmstudio", "llamacpp", "vllm", "jan", "koboldcpp"):
+        console.print(
+            f"[dim]ensure the {provider} server is running (rag doctor to check).[/dim]"
+        )
+
+
+@app.command()
+def doctor(config: str = typer.Option(None, "--config")):
+    """Run environment diagnostics (config, index, embedding, generation backend)."""
+    from . import doctor as _doctor  # noqa: PLC0415
+    raise typer.Exit(_doctor.run_doctor(config, console))
 
 
 @app.command()
