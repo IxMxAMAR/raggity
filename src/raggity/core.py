@@ -254,7 +254,7 @@ class Raggity:
                           self._manifest_path(),
                           fingerprint=self._fingerprint(), chunk_kwargs=chunk_kwargs,
                           ann_threshold=self.cfg.index.ann_threshold)
-        report = indexer.ingest(self.cfg.sources.include)
+        report = indexer.ingest(self.cfg.sources.include, self.cfg.sources.exclude)
 
         # Also ingest any configured URLs. depth=0 fetches exactly one page, so no
         # in-scope page can have vanished -> scope=None (a raw-URL prefix scope

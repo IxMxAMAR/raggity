@@ -28,6 +28,13 @@ def test_embed_documents_accepts_batch_params(emb):
     assert len(emb.embed_documents(["a", "b", "c"])[0]) == 384
 
 
+def test_parallel_default_is_none():
+    """FastEmbedEmbedder defaults parallel=None (in-process, stable path)."""
+    import inspect
+    p = inspect.signature(FastEmbedEmbedder.__init__).parameters
+    assert p["parallel"].default is None
+
+
 def test_similar_texts_closer_than_dissimilar(emb):
     import numpy as np
     a = np.array(emb.embed_query("how do I back up my files"))

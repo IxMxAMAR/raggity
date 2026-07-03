@@ -9,6 +9,9 @@ from pydantic import BaseModel, Field
 
 class SourcesConfig(BaseModel):
     include: list[str] = Field(default_factory=list)
+    # User glob patterns fnmatch'd against each file's posix path; any match skips
+    # the file.  Applied on top of the built-in junk-dir pruning in the loader.
+    exclude: list[str] = Field(default_factory=list)
     urls: list[str] = Field(default_factory=list)
 
 
@@ -16,7 +19,11 @@ class EmbeddingConfig(BaseModel):
     model: str = "BAAI/bge-small-en-v1.5"
     provider: str = "cpu"  # cpu | cuda | directml | rocm
     batch_size: int = 256
-    parallel: int = 0
+    # None = in-process single-model embedding (the stable path).  fastembed
+    # treats 0 as "all cores" MULTIPROCESSING — each worker loads its own ONNX
+    # model, which multiplied an OOM crash on Windows.  Opt in explicitly if you
+    # really want a worker pool.
+    parallel: int | None = None
     cache: bool = False
 
 

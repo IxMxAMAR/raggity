@@ -15,6 +15,7 @@ class IngestReport:
     updated: int = 0
     deleted: int = 0
     unchanged: int = 0
+    scanned: int = 0  # total supported files considered (after exclusion)
     skipped_needs_extra: dict[str, int] = field(default_factory=dict)
     skipped_generic: int = 0
 
@@ -85,7 +86,8 @@ class Indexer:
         if os.path.isfile(self.manifest_path):
             os.remove(self.manifest_path)
 
-    def ingest(self, globs: list[str]) -> IngestReport:
+    def ingest(self, globs: list[str],
+               exclude: list[str] | None = None) -> IngestReport:
         report = IngestReport()
         if self._fingerprint_changed():
             self._resolve_store().reset()
@@ -93,8 +95,9 @@ class Indexer:
         manifest = self._load_manifest()
 
         # 1) Cheap glob+stat sweep — stat-unchanged files never get hashed/parsed.
-        scan = scan_sources(globs, manifest)
+        scan = scan_sources(globs, manifest, exclude)
         report.skipped_generic += scan.skipped_generic
+        report.scanned = scan.scanned
 
         new_manifest: dict[str, dict] = {}
         # Carry forward stat-unchanged entries verbatim.

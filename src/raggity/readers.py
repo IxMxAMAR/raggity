@@ -8,7 +8,13 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from pathlib import Path
+
+# pypdf logs internal recovery chatter ("Ignoring wrong pointing object",
+# "EOF marker not found") at WARNING for slightly-malformed but readable PDFs.
+# It is noise for the end user, so silence anything below ERROR.
+logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 
 class MissingDependencyError(RuntimeError):

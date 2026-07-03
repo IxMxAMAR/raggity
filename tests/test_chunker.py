@@ -60,6 +60,38 @@ def test_parent_mode_children_share_parent_id_and_text():
     assert any(len(c.text) < len(c.parent_text) for c in chunks)
 
 
+def test_hard_split_paragraph_bounds_slices():
+    """An oversize paragraph is sliced to <= max_chars, splitting on whitespace."""
+    from raggity.chunker import _hard_split_paragraph
+    text = "word " * 100000  # ~500k chars, single paragraph, no blank lines
+    slices = _hard_split_paragraph(text, 2048)
+    assert len(slices) > 100
+    assert all(len(s) <= 2048 for s in slices)
+    # words are not cut mid-way: reconstructed word stream is identical
+    assert "".join(slices).replace(" ", "") == text.replace(" ", "")
+
+
+def test_oversize_single_paragraph_chunks_are_bounded():
+    """A ~1MB single-paragraph doc chunks into many bounded pieces (no colossal
+    chunk that would OOM onnxruntime attention)."""
+    big = "word " * 200000  # ~1MB, one paragraph, zero blank lines
+    chunks = chunk_document(_doc(big, path="big.txt", title="big"),
+                            target_tokens=512, overlap_tokens=64)
+    assert len(chunks) > 100
+    # bounded to ~target_tokens*4 chars, doubled at most by paragraph overlap,
+    # plus a small header/margin — nowhere near the whole-document size.
+    assert max(len(c.text) for c in chunks) <= 512 * 4 * 2 + 256
+    assert max(estimate_tokens(c.text) for c in chunks) <= 512 * 2 + 64
+
+
+def test_normal_paragraphs_untouched_by_hard_split():
+    """Below-target paragraphs are not affected by the oversize split path."""
+    from raggity.chunker import _split_body
+    body = "\n\n".join(f"short paragraph {i}" for i in range(5))
+    pieces = _split_body(body, target_tokens=512, overlap_tokens=64)
+    assert pieces == [body]  # one packed piece, byte-identical
+
+
 def test_default_mode_has_empty_parent_fields():
     from raggity.chunker import chunk_document
     chunks = chunk_document(_doc("# A\n\nshort body"))

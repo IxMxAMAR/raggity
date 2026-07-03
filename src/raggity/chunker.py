@@ -43,8 +43,45 @@ def _split_into_sections(text: str) -> list[tuple[str, str]]:
     return sections
 
 
+def _hard_split_paragraph(text: str, max_chars: int) -> list[str]:
+    """Slice an oversize paragraph into pieces of <= *max_chars* chars.
+
+    Prefer breaking at whitespace near the boundary (rfind within the last 200
+    chars) so words are not cut mid-way; fall back to a hard character cut when
+    no whitespace is present.  Guarantees every returned slice is <= max_chars.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        end = min(i + max_chars, n)
+        if end < n:
+            ws = text.rfind(" ", max(i, end - 200), end)
+            if ws > i:
+                end = ws
+        piece = text[i:end].strip()
+        if piece:
+            out.append(piece)
+        i = end
+        while i < n and text[i] == " ":
+            i += 1
+    return out
+
+
 def _split_body(body: str, target_tokens: int, overlap_tokens: int) -> list[str]:
-    paras = [p.strip() for p in re.split(r"\n\s*\n", body) if p.strip()]
+    raw = [p.strip() for p in re.split(r"\n\s*\n", body) if p.strip()]
+    # Hard-cap: a single paragraph larger than target_tokens would otherwise be
+    # emitted as one colossal chunk (which crashed onnxruntime attention on a
+    # giant single-paragraph .txt).  Pre-split any oversize paragraph so NO
+    # chunk can ever exceed ~target_tokens, regardless of input shape.  Only
+    # activates for oversize paragraphs; normal inputs are untouched.
+    max_chars = target_tokens * 4  # estimate_tokens == len // 4
+    paras: list[str] = []
+    for p in raw:
+        if estimate_tokens(p) > target_tokens:
+            paras.extend(_hard_split_paragraph(p, max_chars))
+        else:
+            paras.append(p)
     pieces: list[str] = []
     cur: list[str] = []
     cur_tok = 0

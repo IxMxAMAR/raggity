@@ -79,6 +79,14 @@ def test_ingest_then_status(tmp_path):
     assert r2.exit_code == 0 and "chunks" in r2.stdout.lower()
 
 
+def test_ingest_summary_shows_skipped_count(tmp_path):
+    """The 'Indexed.' line reports the skipped_generic count."""
+    cfg = _make_config(tmp_path)
+    r = runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
+    assert r.exit_code == 0
+    assert "skipped=" in r.output
+
+
 def test_ask_expand_flag(tmp_path, monkeypatch):
     cfg = _make_config(tmp_path)
     runner.invoke(cli_mod.app, ["ingest", "--config", cfg])

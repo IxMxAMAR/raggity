@@ -1,4 +1,6 @@
-from raggity.loader import load_documents, compute_file_hash
+import logging
+
+from raggity.loader import load_documents, compute_file_hash, scan_sources
 
 
 def test_loads_md_and_txt(fixtures_dir):
@@ -93,6 +95,71 @@ def test_missing_dep_file_lands_in_skipped_needs_extra(tmp_path, monkeypatch):
     assert docs == []
     assert skipped_needs_extra.get("ocr", 0) == 1
     assert skipped_generic == 0
+
+
+def test_junk_dir_below_prefix_is_pruned(tmp_path):
+    """A junk dir (AppData) appearing BELOW the include pattern's static prefix
+    is pruned; a real notes dir at the same level is kept."""
+    (tmp_path / "AppData").mkdir()
+    (tmp_path / "AppData" / "junk.txt").write_text("junk from appdata")
+    (tmp_path / "notes").mkdir()
+    (tmp_path / "notes" / "real.txt").write_text("real note")
+    # static prefix is tmp_path; AppData/notes are segments below it
+    docs, _, _ = load_documents([str(tmp_path / "**" / "*.txt")])
+    names = {d.path.rsplit("/", 1)[-1] for d in docs}
+    assert names == {"real.txt"}
+
+
+def test_junk_name_at_or_above_prefix_is_kept(tmp_path):
+    """A pattern pointing INSIDE a junk-named dir (junk name is at/above the
+    static prefix) still ingests — pruning only looks BELOW the prefix."""
+    appdata = tmp_path / "AppData" / "notes"
+    appdata.mkdir(parents=True)
+    (appdata / "real.md").write_text("# Real\n\nkept because prefix reaches here")
+    docs, _, _ = load_documents([str(appdata / "*.md")])
+    names = {d.path.rsplit("/", 1)[-1] for d in docs}
+    assert names == {"real.md"}
+
+
+def test_raggity_index_dir_never_swept(tmp_path):
+    """The .raggity index dir is a built-in junk exclusion below the prefix."""
+    (tmp_path / ".raggity").mkdir()
+    (tmp_path / ".raggity" / "cached.md").write_text("# X\n\nindex internals")
+    (tmp_path / "keep.md").write_text("# Keep\n\nreal content")
+    docs, _, _ = load_documents([str(tmp_path / "**" / "*.md")])
+    names = {d.path.rsplit("/", 1)[-1] for d in docs}
+    assert names == {"keep.md"}
+
+
+def test_user_exclude_glob_honored(tmp_path):
+    """A user exclude glob (fnmatch on the posix path) skips matching files."""
+    (tmp_path / "keep.md").write_text("# Keep\n\nreal")
+    (tmp_path / "draft.md").write_text("# Draft\n\nskip me")
+    docs, _, _ = load_documents(
+        [str(tmp_path / "*.md")], exclude=["**/draft.md"]
+    )
+    names = {d.path.rsplit("/", 1)[-1] for d in docs}
+    assert names == {"keep.md"}
+
+
+def test_scanned_count_populated(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n\nx")
+    (tmp_path / "b.txt").write_text("y")
+    scan = scan_sources([str(tmp_path / "*.md"), str(tmp_path / "*.txt")], {})
+    assert scan.scanned == 2
+
+
+def test_skip_paths_emit_at_info_not_warning(tmp_path, caplog):
+    """Per-file empty/unsupported skips log at INFO, not WARNING (quiet console)."""
+    (tmp_path / "empty.md").write_text("   \n")
+    (tmp_path / "x.bin").write_bytes(b"\x00\x01")
+    with caplog.at_level(logging.INFO, logger="raggity.loader"):
+        load_documents([str(tmp_path / "*.md"), str(tmp_path / "*.bin")])
+    records = [r for r in caplog.records if "skipping" in r.message]
+    assert records, "expected at least one skip log"
+    assert all(r.levelno == logging.INFO for r in records), (
+        f"skip logs must be INFO, got {[r.levelname for r in records]}"
+    )
 
 
 def test_generic_error_lands_in_skipped_generic(tmp_path, monkeypatch):

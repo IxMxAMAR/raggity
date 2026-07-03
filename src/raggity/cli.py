@@ -64,6 +64,12 @@ include = [
   # "**/*.png",      # requires: pip install raggity[ocr]
   # "**/*.jpg",      # requires: pip install raggity[ocr]
 ]
+# Extra glob patterns to skip (matched against each file's posix path), e.g.
+#   exclude = ["**/drafts/**", "**/*.tmp.md"]
+# Built-in junk dirs are ALWAYS pruned below your include prefixes:
+#   AppData, node_modules, .git, __pycache__, site-packages, .venv, venv,
+#   dist-packages, .raggity, .npm, .nuget, .gradle, .cargo, .conda
+exclude = []
 
 [embedding]
 # Model used to embed your documents. CPU-friendly default.
@@ -109,9 +115,15 @@ def ingest(config: str = typer.Option(None, "--config")):
     """Incrementally index configured source folders."""
     _check_no_config(config)
     report = _rag(config).ingest()
+    if report.scanned > 10_000:
+        console.print(
+            f"[yellow]Matched {report.scanned} files - check your "
+            r"\[sources] include/exclude patterns if unintended.[/yellow]"
+        )
     console.print(
         f"[green]Indexed.[/green] added={report.added} updated={report.updated} "
-        f"deleted={report.deleted} unchanged={report.unchanged}"
+        f"deleted={report.deleted} unchanged={report.unchanged} "
+        f"skipped={report.skipped_generic}"
     )
     # Print install hints for any file types that need optional extras
     for extra, cnt in report.skipped_needs_extra.items():

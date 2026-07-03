@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import glob
 import hashlib
 import logging
@@ -11,6 +12,41 @@ from .models import Document
 from .readers import SUPPORTED_EXTS, MissingDependencyError, read_file
 
 log = logging.getLogger("raggity.loader")
+
+# Directory names never worth indexing.  Pruned ONLY when they appear BELOW an
+# include pattern's static prefix (see _expand), so a pattern deliberately
+# pointing inside such a dir still works.
+_DEFAULT_EXCLUDE_DIRS = {
+    "AppData", "node_modules", ".git", "__pycache__", "site-packages",
+    ".venv", "venv", "dist-packages", ".raggity", ".npm", ".nuget",
+    ".gradle", ".cargo", ".conda",
+}
+
+_GLOB_META = ("*", "?", "[")
+
+
+def _static_prefix_len(pattern: str) -> int:
+    """Number of leading path parts of *pattern* before the first glob metachar.
+
+    e.g. ``.../notes/*.md`` -> the parts up to and including ``notes``; ``**/*.txt``
+    run from a root -> only the root's parts (the ``**`` segment stops it).
+    """
+    parts = Path(os.path.expanduser(pattern)).parts
+    n = 0
+    for part in parts:
+        if any(m in part for m in _GLOB_META):
+            break
+        n += 1
+    return n
+
+
+def _junk_below_prefix(fp: str, prefix_len: int) -> bool:
+    """True if any DIRECTORY segment of *fp* below *prefix_len* is a junk dir."""
+    parts = Path(fp).parts
+    for seg in parts[prefix_len:-1]:  # dirs only (exclude the filename)
+        if seg in _DEFAULT_EXCLUDE_DIRS:
+            return True
+    return False
 
 
 def compute_file_hash(path: str) -> str:
@@ -29,11 +65,23 @@ def _title_for(path: Path, text: str) -> str:
     return path.stem
 
 
-def _expand(globs: list[str]) -> list[str]:
-    out: list[str] = []
+def _expand(globs: list[str], exclude: list[str] | None = None) -> list[str]:
+    """Expand *globs*, pruning junk dirs below each pattern's static prefix and
+    any file matching a user *exclude* glob (fnmatch against the posix path)."""
+    exclude = exclude or []
+    out: set[str] = set()
     for g in globs:
-        out.extend(glob.glob(os.path.expanduser(g), recursive=True))
-    return sorted(set(out))
+        pattern = os.path.expanduser(g)
+        prefix_len = _static_prefix_len(g)
+        for fp in glob.glob(pattern, recursive=True):
+            if _junk_below_prefix(fp, prefix_len):
+                continue
+            if exclude and any(
+                fnmatch.fnmatch(Path(fp).as_posix(), pat) for pat in exclude
+            ):
+                continue
+            out.add(fp)
+    return sorted(out)
 
 
 @dataclass
@@ -52,6 +100,7 @@ class ScanResult:
     candidates: list[str] = field(default_factory=list)
     present: set[str] = field(default_factory=set)
     skipped_generic: int = 0
+    scanned: int = 0  # total supported files considered (after exclusion)
 
 
 @dataclass
@@ -72,7 +121,8 @@ class LoadResult:
     skipped_generic: int = 0
 
 
-def scan_sources(globs: list[str], manifest: dict[str, dict]) -> ScanResult:
+def scan_sources(globs: list[str], manifest: dict[str, dict],
+                 exclude: list[str] | None = None) -> ScanResult:
     """Glob + stat sweep classifying files against *manifest* (v2 shape).
 
     Cheap: no hashing, no parsing.  A file is *unchanged* only when BOTH its
@@ -81,16 +131,17 @@ def scan_sources(globs: list[str], manifest: dict[str, dict]) -> ScanResult:
     a *candidate* for hash-based comparison in :func:`load_paths`.
     """
     result = ScanResult()
-    for fp in _expand(globs):
+    for fp in _expand(globs, exclude):
         p = Path(fp)
         if not p.is_file():
             continue
         if p.suffix.lower() not in SUPPORTED_EXTS:
-            log.warning("skipping unsupported file: %s", fp)
+            log.info("skipping unsupported file: %s", fp)
             result.skipped_generic += 1
             continue
         posix_path = p.as_posix()
         result.present.add(posix_path)
+        result.scanned += 1
         entry = manifest.get(posix_path)
         if entry and "mtime" in entry and "size" in entry:
             try:
@@ -120,7 +171,7 @@ def load_paths(candidates: list[str], manifest: dict[str, dict]) -> LoadResult:
         try:
             st = p.stat()
         except OSError as exc:
-            log.warning("skipping unstattable file %s: %s", posix_path, exc)
+            log.info("skipping unstattable file %s: %s", posix_path, exc)
             result.skipped_generic += 1
             continue
         file_hash = compute_file_hash(posix_path)
@@ -143,11 +194,11 @@ def load_paths(candidates: list[str], manifest: dict[str, dict]) -> LoadResult:
             )
             continue
         except Exception as exc:  # encrypted/corrupt PDFs, perms, etc.
-            log.warning("skipping unreadable file %s: %s", posix_path, exc)
+            log.info("skipping unreadable file %s: %s", posix_path, exc)
             result.skipped_generic += 1
             continue
         if text is None or not text.strip():
-            log.warning("skipping empty/no-text file: %s", posix_path)
+            log.info("skipping empty/no-text file: %s", posix_path)
             result.skipped_generic += 1
             continue
         result.docs.append(
@@ -163,7 +214,9 @@ def load_paths(candidates: list[str], manifest: dict[str, dict]) -> LoadResult:
     return result
 
 
-def load_documents(globs: list[str]) -> tuple[list[Document], dict[str, int], int]:
+def load_documents(
+    globs: list[str], exclude: list[str] | None = None
+) -> tuple[list[Document], dict[str, int], int]:
     """Load documents matching *globs* (back-compat wrapper, empty manifest).
 
     Returns:
@@ -172,6 +225,6 @@ def load_documents(globs: list[str]) -> tuple[list[Document], dict[str, int], in
         - skipped_needs_extra: {extra_name: count} for MissingDependencyError skips
         - skipped_generic: count of other skips (corrupt/empty/unsupported)
     """
-    scan = scan_sources(globs, {})
+    scan = scan_sources(globs, {}, exclude)
     load = load_paths(scan.candidates, {})
     return load.docs, load.skipped_needs_extra, scan.skipped_generic + load.skipped_generic

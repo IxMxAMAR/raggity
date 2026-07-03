@@ -62,6 +62,17 @@ def test_sufficiency_floor_default():
     assert r.sufficiency_floor == 0.5
 
 
+def test_embedding_parallel_defaults_to_none():
+    """parallel default is None (in-process single model), NOT 0 (all-cores MP)."""
+    from raggity.config import RaggityConfig
+    assert RaggityConfig().embedding.parallel is None
+
+
+def test_sources_exclude_defaults_empty():
+    from raggity.config import RaggityConfig
+    assert RaggityConfig().sources.exclude == []
+
+
 def test_relevance_floor_default_is_zero():
     """relevance_floor should default to 0.0 (off) so cross-encoder score never abstains by default."""
     from raggity.config import RetrievalConfig

@@ -28,7 +28,7 @@ class FastEmbedEmbedder(Embedder):
     def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5",
                  provider: str = "cpu",
                  batch_size: int = 256,
-                 parallel: int = 0) -> None:
+                 parallel: int | None = None) -> None:
         from fastembed import TextEmbedding
 
         providers = _PROVIDERS.get(provider, _PROVIDERS["cpu"])

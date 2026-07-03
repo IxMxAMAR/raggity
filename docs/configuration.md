@@ -15,13 +15,22 @@ cp raggity.example.toml raggity.toml
 ```toml
 [sources]
 include = ["~/notes/**/*.md", "~/docs/**/*.pdf"]
+exclude = ["**/drafts/**", "**/*.tmp.md"]
 urls = ["https://docs.example.com/overview"]
 ```
 
 | Key | Default | Description |
 |---|---|---|
 | `include` | `[]` | Glob patterns for local files to index |
+| `exclude` | `[]` | Glob patterns (fnmatch on the posix path) to skip. Applied on top of built-in junk-dir pruning |
 | `urls` | `[]` | URLs to fetch and index on every `rag ingest` run |
+
+> Built-in junk directories are **always** pruned when they appear *below* an
+> `include` pattern's static (pre-glob) prefix: `AppData`, `node_modules`,
+> `.git`, `__pycache__`, `site-packages`, `.venv`, `venv`, `dist-packages`,
+> `.raggity`, `.npm`, `.nuget`, `.gradle`, `.cargo`, `.conda`. This stops a
+> broad pattern like `**/*.txt` run from your home directory from sweeping
+> caches and dependency trees. A pattern pointed *inside* such a dir still works.
 
 ---
 
@@ -58,7 +67,7 @@ qdrant_collection = "raggity"
 model = "BAAI/bge-small-en-v1.5"   # default lightweight model
 provider = "cpu"                    # cpu / cuda / directml / rocm
 batch_size = 256
-parallel = 0                        # 0 = auto
+# parallel = 4                      # omit for in-process (default); N = worker pool
 cache = false                       # cache embeddings as JSON
 ```
 
@@ -67,7 +76,7 @@ cache = false                       # cache embeddings as JSON
 | `model` | `"BAAI/bge-small-en-v1.5"` | fastembed model name |
 | `provider` | `"cpu"` | ONNX Runtime execution provider |
 | `batch_size` | `256` | Embedding batch size |
-| `parallel` | `0` | Parallel embedding workers (0 = auto) |
+| `parallel` | _(unset)_ | Embedding worker pool size. Default (unset/`None`) = in-process single model, the stable path. A positive `N` spawns `N` multiprocessing workers (each loads its own ONNX model); avoid on memory-constrained Windows |
 | `cache` | `false` | Cache embeddings by content hash to avoid re-embedding unchanged chunks |
 
 ### GPU acceleration
