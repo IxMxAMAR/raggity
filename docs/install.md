@@ -5,13 +5,57 @@
 - Python **3.11+**
 - A Claude subscription (`claude login`) **or** an `ANTHROPIC_API_KEY`
 
-## Core install
+## 1. pip / pipx / uv (recommended for CLI use)
 
 ```bash
-pip install raggity
+pip install raggity        # into the current environment
+pipx install raggity       # isolated install, `rag` on PATH
+uv tool install raggity    # isolated install, via uv
 ```
 
 Both `rag` and `raggity` console scripts are registered — they are identical aliases.
+
+---
+
+## 2. Standalone binaries (no Python needed)
+
+Prebuilt, self-contained builds are attached to every
+[GitHub Release](https://github.com/IxMxAMAR/raggity/releases). No Python
+installation is required.
+
+| Platform | Asset | Install |
+|---|---|---|
+| Windows x64 | `raggity-<version>-windows-x86_64.zip` | Unzip anywhere, run `rag.exe`. Add the folder to `PATH` for a global `rag` command. |
+| Linux x86_64 | `raggity-<version>-linux-x86_64.tar.gz` | `tar -xzf raggity-<version>-linux-x86_64.tar.gz && ./rag --help` |
+| Linux (Debian/Ubuntu) | `raggity_<version>_amd64.deb` | `sudo apt install ./raggity_<version>_amd64.deb` — installs to `/opt/raggity` with a `/usr/bin/rag` symlink. |
+| macOS (Apple Silicon) | `raggity-<version>-macos-arm64.tar.gz` | `tar -xzf raggity-<version>-macos-arm64.tar.gz && ./rag --help` |
+
+!!! note "Backend requirements for the binaries"
+    - The **Claude** backend needs Claude Code (`claude`) on your `PATH`.
+    - **Local backends** (Ollama and any OpenAI-compatible server: LM Studio,
+      llama.cpp, vLLM, Jan) work out of the box — nothing extra to install.
+    - **OCR** for scanned PDFs and images is **pip-only**: the binaries omit the
+      OCR stack; install `raggity[ocr]` into a Python environment if you need it.
+
+The embedding model (`BAAI/bge-small-en-v1.5`, ~130 MB) is downloaded to your
+cache on first use, exactly like the pip install.
+
+---
+
+## 3. Package managers
+
+```bash
+# Scoop (Windows)
+scoop bucket add raggity https://github.com/IxMxAMAR/scoop-raggity
+scoop install raggity
+
+# Homebrew (macOS / Linux) — binary formula
+brew tap ixmxamar/raggity
+brew install raggity
+```
+
+winget (`winget install IxMxAMAR.raggity`) and Chocolatey (`choco install raggity`)
+are **submission in progress**.
 
 ---
 

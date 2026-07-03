@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Chocolatey package for raggity (Windows standalone binary).
+  {{VERSION}} is replaced at pack time (see packaging/choco/README.md).
+-->
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>raggity</id>
+    <version>{{VERSION}}</version>
+    <title>raggity</title>
+    <authors>IxMxAMAR</authors>
+    <owners>IxMxAMAR</owners>
+    <projectUrl>https://github.com/IxMxAMAR/raggity</projectUrl>
+    <projectSourceUrl>https://github.com/IxMxAMAR/raggity</projectSourceUrl>
+    <docsUrl>https://ixmxamar.github.io/raggity/</docsUrl>
+    <bugTrackerUrl>https://github.com/IxMxAMAR/raggity/issues</bugTrackerUrl>
+    <licenseUrl>https://github.com/IxMxAMAR/raggity/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>rag cli llm claude embeddings search retrieval local-first ai</tags>
+    <summary>Local-first, top-tier RAG over your notes, docs and PDFs — answered by Claude.</summary>
+    <description>
+raggity is a standalone RAG CLI (the `rag` command) that ingests your documents
+and answers questions with citations. This package installs a self-contained
+Windows build; **no Python installation is required**.
+
+The Claude backend additionally needs Claude Code (`claude`) on PATH. Local
+backends (Ollama and any OpenAI-compatible server) work out of the box. OCR for
+scanned PDFs/images is available via the pip package only (`pip install raggity[ocr]`).
+    </description>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

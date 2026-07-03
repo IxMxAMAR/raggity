@@ -23,11 +23,48 @@ Hybrid retrieval (dense + BM25 + RRF), cross-encoder reranking, dedup, verified 
 
 ## Install
 
+### 1. pip / pipx / uv (recommended for CLI use)
+
 ```bash
-pip install raggity
+pip install raggity        # into the current environment
+pipx install raggity       # isolated, `rag` on PATH
+uv tool install raggity    # isolated, via uv
 ```
 
-Python 3.11+ required. See [Platform support](#platform-support) for OS/architecture notes.
+Python 3.11+ required. Both `rag` and `raggity` console scripts are installed.
+
+### 2. Standalone binaries (no Python needed)
+
+Download from [GitHub Releases](https://github.com/IxMxAMAR/raggity/releases):
+
+| Platform | Asset | Use |
+|---|---|---|
+| Windows x64 | `raggity-<version>-windows-x86_64.zip` | Unzip, run `rag.exe` (add the folder to PATH) |
+| Linux x86_64 | `raggity-<version>-linux-x86_64.tar.gz` | Extract, run `./rag` |
+| Linux (Debian/Ubuntu) | `raggity_<version>_amd64.deb` | `sudo apt install ./raggity_<version>_amd64.deb` → `rag` on PATH |
+| macOS (Apple Silicon) | `raggity-<version>-macos-arm64.tar.gz` | Extract, run `./rag` |
+
+The binaries are self-contained — no Python required. Notes:
+
+- The **Claude** backend needs Claude Code (`claude`) on your PATH.
+- **Local backends** (Ollama and any OpenAI-compatible server) work out of the box.
+- **OCR** for scanned PDFs/images is pip-only: `pip install raggity[ocr]`.
+
+### 3. Package managers
+
+```bash
+# Scoop (Windows)
+scoop bucket add raggity https://github.com/IxMxAMAR/scoop-raggity
+scoop install raggity
+
+# Homebrew (macOS/Linux) — binary formula
+brew tap ixmxamar/raggity
+brew install raggity
+```
+
+winget (`winget install IxMxAMAR.raggity`) and Chocolatey (`choco install raggity`) — **submission in progress**.
+
+See [Platform support](#platform-support) for OS/architecture notes.
 
 ---
 

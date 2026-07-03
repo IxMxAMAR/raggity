@@ -1,0 +1,36 @@
+# Maintainer: IxMxAMAR <officialamrendrasingh@gmail.com>
+#
+# AUR package: raggity-bin — the prebuilt standalone `rag` binary (no Python).
+# Sources the linux tar.gz from the GitHub release; installs the onedir bundle
+# to /opt/raggity with a /usr/bin/rag symlink.
+#
+# PUBLISHING: bump pkgver, then regenerate the checksum before committing:
+#     updpkgsums          # (from pacman-contrib) rewrites sha256sums in place
+#   or:
+#     makepkg -g          # prints the sha256sum to paste over 'SKIP'
+# Then refresh .SRCINFO:  makepkg --printsrcinfo > .SRCINFO
+
+pkgname=raggity-bin
+pkgver=0.10.0
+pkgrel=1
+pkgdesc="Local-first, top-tier RAG over your notes, docs and PDFs — answered by Claude (standalone binary)"
+arch=('x86_64')
+url="https://github.com/IxMxAMAR/raggity"
+license=('AGPL3')
+depends=('glibc')
+provides=('raggity')
+conflicts=('raggity')
+# PyInstaller bundles must not be stripped (breaks the frozen archive).
+options=(!strip)
+source=("raggity-${pkgver}-linux-x86_64.tar.gz::https://github.com/IxMxAMAR/raggity/releases/download/v${pkgver}/raggity-${pkgver}-linux-x86_64.tar.gz")
+sha256sums=('SKIP')  # replace via updpkgsums / makepkg -g before publishing
+
+package() {
+  # The tarball holds the onedir CONTENTS at its root (rag + _internal/).
+  install -dm755 "${pkgdir}/opt/raggity"
+  cp -a "${srcdir}/rag" "${srcdir}/_internal" "${pkgdir}/opt/raggity/"
+
+  # Expose the CLI on PATH.
+  install -dm755 "${pkgdir}/usr/bin"
+  ln -s /opt/raggity/rag "${pkgdir}/usr/bin/rag"
+}

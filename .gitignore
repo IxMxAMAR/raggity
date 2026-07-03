@@ -16,3 +16,6 @@ test_output.txt
 
 # MkDocs generated site
 site/
+
+# PyInstaller build spike (uncommitted)
+/build-spike/
