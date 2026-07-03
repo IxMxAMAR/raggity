@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 
 
@@ -155,17 +156,16 @@ class Raggity:
                           ann_threshold=self.cfg.index.ann_threshold)
         report = indexer.ingest(self.cfg.sources.include)
 
-        # Also ingest any configured URLs (depth=0 each, additive — no deletion)
+        # Also ingest any configured URLs (depth=0 each; scope = the exact URL)
         if self.cfg.sources.urls:
             from .connectors.web import WebConnector  # noqa: PLC0415
-            docs: list[Document] = []
             for url in self.cfg.sources.urls:
                 try:
-                    docs.extend(WebConnector(url, depth=0).fetch())
+                    docs = WebConnector(url, depth=0).fetch()
                 except Exception:
-                    pass  # network errors during ingest are non-fatal
-            if docs:
-                report.added += self.ingest_documents(docs)
+                    docs = []  # network errors during ingest are non-fatal
+                if docs:
+                    report.added += self.ingest_documents(docs, scope=url)
 
         # Build graph after vector upsert when graph=true (LLM-cost-heavy, opt-in)
         if self.cfg.retrieval.graph:
@@ -173,17 +173,61 @@ class Raggity:
 
         return report
 
-    def ingest_documents(self, docs: list[Document]) -> int:
-        """Chunk and upsert *docs* into the index.  Returns number of docs ingested."""
+    def _connector_manifest_path(self) -> str:
+        return os.path.join(self.cfg.index.path, "manifest_connectors.json")
+
+    def _load_connector_manifest(self) -> dict[str, dict]:
+        p = self._connector_manifest_path()
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8") as fh:
+                return json.load(fh)
+        return {}
+
+    def _save_connector_manifest(self, manifest: dict[str, dict]) -> None:
+        os.makedirs(self.cfg.index.path, exist_ok=True)
+        p = self._connector_manifest_path()
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        os.replace(tmp, p)
+
+    def ingest_documents(self, docs: list[Document], scope: str | None = None) -> int:
+        """Chunk and upsert *docs* into the index (connector-incremental).
+
+        A separate ``manifest_connectors.json`` records each doc's content hash.
+        Docs whose hash matches are skipped (no re-chunk/re-embed).  A doc with
+        an empty ``file_hash`` (e.g. server ``/ingest/content``) never matches
+        and is always upserted.  When *scope* is given (a delimiter-terminated
+        prefix over ``doc.path``), entries under that scope that were NOT seen
+        in this call are treated as vanished and their chunks removed — deletion
+        is confined to the scope, leaving other scopes intact.  Returns the
+        number of docs passed in (unchanged return semantics).
+        """
         from .chunker import chunk_document  # noqa: PLC0415
         chunk_kwargs = {"parent_document": self.cfg.retrieval.parent_document,
                         "parent_target_tokens": self.cfg.retrieval.parent_target_tokens,
                         "child_target_tokens": self.cfg.retrieval.child_target_tokens}
+        manifest = self._load_connector_manifest()
+        seen: set[str] = set()
+        to_delete: set[str] = set()
         all_chunks = []
         for doc in docs:
+            seen.add(doc.path)
+            prev = manifest.get(doc.path)
+            if doc.file_hash and prev is not None and prev.get("hash") == doc.file_hash:
+                continue  # content unchanged — skip re-chunk/re-embed
             all_chunks.extend(chunk_document(doc, **chunk_kwargs))
+            manifest[doc.path] = {"hash": doc.file_hash}
+        if scope is not None:
+            for path in list(manifest.keys()):
+                if path.startswith(scope) and path not in seen:
+                    to_delete.add(path)
+                    del manifest[path]
+        if to_delete:
+            self.store.delete_sources(list(to_delete))
         if all_chunks:
             self.store.upsert(all_chunks, self.embedder)
+        self._save_connector_manifest(manifest)
         return len(docs)
 
     async def _graph_neighborhood_ids(self, question: str) -> list[str]:

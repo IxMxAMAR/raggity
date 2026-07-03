@@ -8,6 +8,7 @@ class Document:
     text: str
     file_hash: str
     mtime: float
+    size: int = 0
 
 
 @dataclass

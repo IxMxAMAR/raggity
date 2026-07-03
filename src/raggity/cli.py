@@ -144,7 +144,13 @@ def ingest_url(
     if not docs:
         console.print("[yellow]No content extracted.[/yellow]")
         raise typer.Exit(0)
-    added = rag.ingest_documents(docs)
+    if depth == 0:
+        scope = url
+    else:
+        from urllib.parse import urlparse  # noqa: PLC0415
+        pr = urlparse(url)
+        scope = f"{pr.scheme}://{pr.netloc}"
+    added = rag.ingest_documents(docs, scope=scope)
     console.print(f"[green]Ingested {added} page(s) from {url}.[/green]")
 
 
@@ -167,7 +173,7 @@ def ingest_repo(
     if not docs:
         console.print("[yellow]No text files found in repository.[/yellow]")
         raise typer.Exit(0)
-    added = rag.ingest_documents(docs)
+    added = rag.ingest_documents(docs, scope=f"{url}#")
     console.print(f"[green]Ingested {added} file(s) from {url}.[/green]")
 
 
@@ -189,7 +195,9 @@ def ingest_obsidian(
     if not docs:
         console.print("[yellow]No Markdown notes found in vault.[/yellow]")
         raise typer.Exit(0)
-    added = rag.ingest_documents(docs)
+    from pathlib import Path as _Path  # noqa: PLC0415
+    scope = _Path(vault).as_posix().rstrip("/") + "/"
+    added = rag.ingest_documents(docs, scope=scope)
     console.print(f"[green]Ingested {added} note(s) from {vault}.[/green]")
 
 

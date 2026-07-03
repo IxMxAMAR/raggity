@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .chunker import chunk_document
-from .loader import load_documents
+from .loader import load_paths, scan_sources
 
 
 @dataclass
@@ -29,16 +29,29 @@ class Indexer:
         self.chunk_kwargs = chunk_kwargs
         self.ann_threshold = ann_threshold
 
-    def _load_manifest(self) -> dict[str, str]:
+    def _load_manifest(self) -> dict[str, dict]:
+        """Load the manifest, migrating v1 (flat ``{path: hash}``) to v2.
+
+        v2 shape is ``{path: {"hash", "mtime", "size"}}``.  Migration is a
+        value-type sniff: a string value is a v1 hash → wrapped as
+        ``{"hash": value}`` (no mtime/size), so it lands in the scan candidates
+        and is upgraded in place on first ingest.
+        """
         if os.path.isfile(self.manifest_path):
             with open(self.manifest_path, encoding="utf-8") as fh:
-                return json.load(fh)
+                raw = json.load(fh)
+            return {
+                p: ({"hash": v} if isinstance(v, str) else v)
+                for p, v in raw.items()
+            }
         return {}
 
-    def _save_manifest(self, manifest: dict[str, str]) -> None:
+    def _save_manifest(self, manifest: dict[str, dict]) -> None:
         Path(self.manifest_path).parent.mkdir(parents=True, exist_ok=True)
-        with open(self.manifest_path, "w", encoding="utf-8") as fh:
+        tmp = self.manifest_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(manifest, fh)
+        os.replace(tmp, self.manifest_path)
 
     def _fp_path(self) -> str:
         return self.manifest_path + ".fingerprint"
@@ -70,35 +83,46 @@ class Indexer:
             self.store.reset()
             self._clear_manifest()
         manifest = self._load_manifest()
-        docs, skipped_needs_extra, skipped_generic = load_documents(globs)
-        # Accumulate skip counts into the report
-        for extra, cnt in skipped_needs_extra.items():
+
+        # 1) Cheap glob+stat sweep — stat-unchanged files never get hashed/parsed.
+        scan = scan_sources(globs, manifest)
+        report.skipped_generic += scan.skipped_generic
+
+        new_manifest: dict[str, dict] = {}
+        # Carry forward stat-unchanged entries verbatim.
+        new_manifest.update(scan.unchanged)
+        report.unchanged += len(scan.unchanged)
+
+        # 2) Hash + (conditionally) parse the candidates.
+        load = load_paths(scan.candidates, manifest)
+        for extra, cnt in load.skipped_needs_extra.items():
             report.skipped_needs_extra[extra] = (
                 report.skipped_needs_extra.get(extra, 0) + cnt
             )
-        report.skipped_generic += skipped_generic
-        seen: dict[str, str] = {}
-        to_delete: set[str] = set()
+        report.skipped_generic += load.skipped_generic
 
+        # Content-unchanged-despite-stat: refresh (mtime, size), keep hash, no parse.
+        new_manifest.update(load.unchanged_by_hash)
+        report.unchanged += len(load.unchanged_by_hash)
+
+        to_delete: set[str] = set()
         all_chunks: list = []
-        for doc in docs:
-            seen[doc.path] = doc.file_hash
+        for doc in load.docs:
             prev = manifest.get(doc.path)
-            if prev == doc.file_hash:
-                report.unchanged += 1
-                continue
-            # changed or new → existing chunks for this source (if any) are removed
-            # below in the single batched delete_sources call before the upsert.
+            # changed → remove old chunks (batched below before upsert).
             to_delete.add(doc.path)
             all_chunks.extend(chunk_document(doc, **(self.chunk_kwargs or {})))
+            new_manifest[doc.path] = {
+                "hash": doc.file_hash, "mtime": doc.mtime, "size": doc.size,
+            }
             if prev is None:
                 report.added += 1
             else:
                 report.updated += 1
 
-        # sources that vanished from disk
+        # 3) Deletion detection via the scan's present-set (glob+stat only).
         for old_path in list(manifest.keys()):
-            if old_path not in seen:
+            if old_path not in scan.present:
                 to_delete.add(old_path)
                 report.deleted += 1
 
@@ -110,8 +134,11 @@ class Indexer:
         if all_chunks:
             self.store.upsert(all_chunks, self.embedder)
 
-        self.store.ensure_ann_index(self.ann_threshold)
-        self._save_manifest(seen)
+        store_changed = bool(all_chunks) or report.deleted > 0
+        if store_changed:
+            self.store.ensure_ann_index(self.ann_threshold)
+        self._save_manifest(new_manifest)
         self._write_fingerprint()
-        self.store.optimize()
+        if store_changed:
+            self.store.optimize()
         return report
