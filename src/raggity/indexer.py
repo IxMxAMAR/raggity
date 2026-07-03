@@ -22,12 +22,20 @@ class IngestReport:
 class Indexer:
     def __init__(self, embedder, store, manifest_path: str, fingerprint: str = "",
                  chunk_kwargs: dict | None = None, ann_threshold: int = 0) -> None:
+        # embedder/store may be the objects themselves OR zero-arg callables
+        # returning them, so a no-op ingest never has to build either.
         self.embedder = embedder
         self.store = store
         self.manifest_path = manifest_path
         self.fingerprint = fingerprint
         self.chunk_kwargs = chunk_kwargs
         self.ann_threshold = ann_threshold
+
+    def _resolve_store(self):
+        return self.store() if callable(self.store) else self.store
+
+    def _resolve_embedder(self):
+        return self.embedder() if callable(self.embedder) else self.embedder
 
     def _load_manifest(self) -> dict[str, dict]:
         """Load the manifest, migrating v1 (flat ``{path: hash}``) to v2.
@@ -80,7 +88,7 @@ class Indexer:
     def ingest(self, globs: list[str]) -> IngestReport:
         report = IngestReport()
         if self._fingerprint_changed():
-            self.store.reset()
+            self._resolve_store().reset()
             self._clear_manifest()
         manifest = self._load_manifest()
 
@@ -128,17 +136,17 @@ class Indexer:
 
         # single batched delete across all changed + vanished sources
         if to_delete:
-            self.store.delete_sources(list(to_delete))
+            self._resolve_store().delete_sources(list(to_delete))
 
         # single batched upsert across all changed files
         if all_chunks:
-            self.store.upsert(all_chunks, self.embedder)
+            self._resolve_store().upsert(all_chunks, self._resolve_embedder())
 
         store_changed = bool(all_chunks) or report.deleted > 0
         if store_changed:
-            self.store.ensure_ann_index(self.ann_threshold)
+            self._resolve_store().ensure_ann_index(self.ann_threshold)
         self._save_manifest(new_manifest)
         self._write_fingerprint()
         if store_changed:
-            self.store.optimize()
+            self._resolve_store().optimize()
         return report

@@ -205,10 +205,24 @@ class Raggity:
     def _graph_path(self) -> str:
         return os.path.join(self.cfg.index.path, _GRAPH_JSON)
 
-    def _fingerprint(self) -> str:
+    def _fingerprint_with_dim(self, dim) -> str:
         rc = self.cfg.retrieval
-        return (f"{self.cfg.embedding.model}|{self.embedder.dim}|"
+        return (f"{self.cfg.embedding.model}|{dim}|"
                 f"pd={rc.parent_document}|pt={rc.parent_target_tokens}|ct={rc.child_target_tokens}")
+
+    def _fingerprint(self) -> str:
+        # dim is fully determined by the model name, so when the stored
+        # fingerprint matches on model + chunking params it is provably current
+        # and we can return it without loading the embedding model (keeps a
+        # no-op ingest model-free).
+        fp_file = self._manifest_path() + ".fingerprint"
+        if os.path.isfile(fp_file):
+            with open(fp_file, encoding="utf-8") as fh:
+                stored = fh.read().strip()
+            parts = stored.split("|")
+            if len(parts) >= 2 and self._fingerprint_with_dim(parts[1]) == stored:
+                return stored
+        return self._fingerprint_with_dim(self.embedder.dim)
 
     async def build_graph(self) -> None:
         """Extract entities/relations from all indexed chunks and save graph.json.
@@ -234,7 +248,10 @@ class Raggity:
         chunk_kwargs = {"parent_document": self.cfg.retrieval.parent_document,
                         "parent_target_tokens": self.cfg.retrieval.parent_target_tokens,
                         "child_target_tokens": self.cfg.retrieval.child_target_tokens}
-        indexer = Indexer(self.embedder, self.store, self._manifest_path(),
+        # Pass embedder/store as callables: a no-op ingest (nothing changed)
+        # then never loads the embedding model or opens the vector store.
+        indexer = Indexer(lambda: self.embedder, lambda: self.store,
+                          self._manifest_path(),
                           fingerprint=self._fingerprint(), chunk_kwargs=chunk_kwargs,
                           ann_threshold=self.cfg.index.ann_threshold)
         report = indexer.ingest(self.cfg.sources.include)

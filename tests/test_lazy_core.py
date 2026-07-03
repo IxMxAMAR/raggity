@@ -141,3 +141,30 @@ def test_from_config_callable_not_invoked_when_table_exists(tmp_path):
     s2 = LanceDBStore.from_config(cfg, _dim)
     assert s2.count() == 1
     assert called == [], "callable dim must not be invoked when the table already exists"
+
+
+def test_noop_ingest_builds_neither_embedder_nor_store(tmp_path):
+    """A second (no-op) ingest must not load the embedding model or open the store.
+
+    The mtime fast-path classifies everything unchanged, the stored fingerprint
+    matches on model+params (dim borrowed from the stored string), and the
+    Indexer resolves its embedder/store callables only on actual work.
+    """
+    from raggity.config import IndexConfig, RaggityConfig, SourcesConfig
+
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nalpha content here", encoding="utf-8")
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str((notes / "*.md").as_posix())]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+    )
+    first = Raggity(cfg)
+    report = first.ingest()
+    assert report.added == 1
+
+    fresh = Raggity(cfg)
+    report2 = fresh.ingest()
+    assert report2.unchanged == 1 and report2.added == 0
+    assert fresh._raw_embedder is _UNSET, "no-op ingest must not build the embedder"
+    assert fresh._store is _UNSET, "no-op ingest must not open the store"
