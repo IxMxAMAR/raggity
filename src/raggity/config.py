@@ -44,6 +44,7 @@ class RetrievalConfig(BaseModel):
     step_back: bool = False
     graph: bool = False
     graph_hops: int = 1
+    graph_concurrency: int = 8
 
 
 class GenerationConfig(BaseModel):

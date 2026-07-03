@@ -225,8 +225,14 @@ class GraphStore:
 # build_graph()
 # ---------------------------------------------------------------------------
 
-async def build_graph(chunks, provider) -> GraphStore:
+async def build_graph(chunks, provider, concurrency: int = 8) -> GraphStore:
     """Extract entities/relations from each chunk and accumulate in a GraphStore.
+
+    Extraction runs concurrently (bounded by *concurrency*) but nodes are added
+    in ORIGINAL chunk order so the resulting graph is deterministic — the
+    first-seen-label rule in :meth:`GraphStore.add` is order-sensitive.  A chunk
+    whose extraction raises contributes nothing (``([], [])``) rather than
+    aborting the whole build.
 
     Parameters
     ----------
@@ -234,9 +240,26 @@ async def build_graph(chunks, provider) -> GraphStore:
         Iterable of objects with ``.text`` and ``.chunk_id`` attributes.
     provider
         An :class:`~raggity.llm.LLMProvider` instance.
+    concurrency
+        Maximum number of in-flight extraction calls.
     """
+    import asyncio
+
+    chunk_list = list(chunks)
     store = GraphStore()
-    for chunk in chunks:
-        entities, relations = await extract(chunk.text, provider)
+    if not chunk_list:
+        return store
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def _one(chunk):
+        async with sem:
+            try:
+                return await extract(chunk.text, provider)
+            except Exception:
+                return ([], [])
+
+    results = await asyncio.gather(*[_one(c) for c in chunk_list])
+    # Add in original order for determinism (gather preserves input order).
+    for chunk, (entities, relations) in zip(chunk_list, results):
         store.add(entities, relations, chunk.chunk_id)
     return store

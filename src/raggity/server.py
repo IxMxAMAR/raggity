@@ -41,6 +41,17 @@ class IngestContentRequest(BaseModel):
     documents: list[IngestDocument]
 
 
+def _sse_data(text: str) -> str:
+    """Frame *text* as an SSE ``data:`` message, one ``data:`` line per newline.
+
+    The SSE wire format joins consecutive ``data:`` lines with ``\\n`` on the
+    client, so a naive single ``data: {text}`` silently drops embedded newlines.
+    Splitting here preserves multi-line deltas end to end.
+    """
+    lines = text.split("\n")
+    return "".join(f"data: {ln}\n" for ln in lines) + "\n"
+
+
 def create_app(cfg: RaggityConfig) -> FastAPI:
     state: dict = {}
 
@@ -253,30 +264,36 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
 
         async def _event_stream() -> AsyncIterator[str]:
             from .models import Answer  # noqa: PLC0415
+            # Comment line flushes any proxy buffer so the client sees the stream open.
+            yield ":ok\n\n"
             try:
                 if session_id is not None:
-                    # Session-aware streaming: collect via achat then yield as single chunk
-                    # (achat is not a generator but we can still stream the answer text)
+                    # Session-aware token streaming via achat_stream.
                     conv = _get_or_create_session(identity, session_id)
-                    answer: Answer = await rag.achat(conv, question)
-                    yield f"data: {answer.text}\n\n"
+                    final_answer: Answer | None = None
+                    async for piece in rag.achat_stream(conv, question):
+                        if isinstance(piece, Answer):
+                            final_answer = piece
+                        else:
+                            yield _sse_data(piece)
+                    citations = final_answer.citations if final_answer is not None else []
                     done_payload = {
                         "citations": [
                             {"chunk_id": c.chunk_id, "source_path": c.source_path,
                              "title": c.title, "supported": c.supported}
-                            for c in answer.citations
+                            for c in citations
                         ],
                         "session_id": session_id,
                     }
                     yield f"event: done\ndata: {json.dumps(done_payload)}\n\n"
                 else:
                     # Stateless streaming via aask_stream
-                    final_answer: Answer | None = None
+                    final_answer = None
                     async for piece in rag.aask_stream(question):
                         if isinstance(piece, Answer):
                             final_answer = piece
                         else:
-                            yield f"data: {piece}\n\n"
+                            yield _sse_data(piece)
                     if final_answer is not None:
                         done_payload = {
                             "citations": [
@@ -296,7 +313,9 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
                 yield 'event: error\ndata: {"error": "internal error"}\n\n'
                 return
 
-        return StreamingResponse(_event_stream(), media_type="text/event-stream")
+        return StreamingResponse(
+            _event_stream(), media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @app.get("/")
     async def root():

@@ -79,15 +79,30 @@ class JudgeResult:
     n: int
 
 
-_FAITH_SYS = ("You are a strict grader. Answer ONLY 'YES' or 'NO'. YES if every claim in the "
-              "ANSWER is supported by the CONTEXT; NO otherwise.")
-_REL_SYS = ("You are a strict grader. Answer ONLY 'YES' or 'NO'. YES if the ANSWER directly "
-            "addresses the QUESTION; NO otherwise.")
+_JUDGE_SYS = (
+    "You are a strict grader. Given a QUESTION, CONTEXT, and ANSWER, output EXACTLY "
+    "two lines and nothing else:\n"
+    "FAITHFUL: YES|NO   (YES if every claim in the ANSWER is supported by the CONTEXT)\n"
+    "RELEVANT: YES|NO   (YES if the ANSWER directly addresses the QUESTION)"
+)
 
 
-async def _yes_no(prompt: str, system_prompt: str, provider: LLMProvider) -> bool:
-    result = await provider.complete(system_prompt, prompt)
-    return "yes" in result.lower()[:5]
+def _parse_judge(text: str) -> tuple[bool, bool]:
+    """Parse the two-labeled-line judge reply leniently.
+
+    A line is truthy only when its label is present AND its value contains
+    ``yes``.  Any missing or garbled line defaults to ``False`` — matching the
+    previous single-call ``_yes_no`` semantics (absence → NO).
+    """
+    faith = False
+    rel = False
+    for line in text.splitlines():
+        s = line.strip().lower()
+        if s.startswith("faithful:"):
+            faith = "yes" in s.split(":", 1)[1]
+        elif s.startswith("relevant:"):
+            rel = "yes" in s.split(":", 1)[1]
+    return faith, rel
 
 
 async def llm_judge(rag, golden: list[dict], provider: LLMProvider) -> JudgeResult:
@@ -105,10 +120,11 @@ async def llm_judge(rag, golden: list[dict], provider: LLMProvider) -> JudgeResu
             f_total += 1.0
             continue
         context = "\n\n".join(c.text for c in chunks)
-        faith = await _yes_no(f"CONTEXT:\n{context}\n\nANSWER:\n{answer.text}",
-                              _FAITH_SYS, provider)
-        rel = await _yes_no(f"QUESTION:\n{q}\n\nANSWER:\n{answer.text}",
-                            _REL_SYS, provider)
+        # ONE provider call per non-abstained row (faithfulness + relevance merged).
+        raw = await provider.complete(
+            _JUDGE_SYS,
+            f"QUESTION:\n{q}\n\nCONTEXT:\n{context}\n\nANSWER:\n{answer.text}")
+        faith, rel = _parse_judge(raw)
         f_total += 1.0 if faith else 0.0
         r_total += 1.0 if rel else 0.0
     if n == 0:

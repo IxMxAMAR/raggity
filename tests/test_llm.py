@@ -95,3 +95,53 @@ def test_options_sets_setting_sources_empty_and_max_turns_one():
     opts = p._options("sys")
     assert opts.setting_sources == []
     assert opts.max_turns == 1
+
+
+# Perf (v0.9.0 Task 5b): true token streaming. When the SDK forwards incremental
+# StreamEvent text deltas, the provider yields them AND suppresses the final
+# AssistantMessage snapshot (which repeats the same text) to avoid duplication.
+class _SE:
+    """Minimal StreamEvent-shaped stub (has an `.event` dict like the real one)."""
+    def __init__(self, event): self.event = event
+
+
+def _text_delta(t):
+    return _SE({"type": "content_block_delta",
+                "delta": {"type": "text_delta", "text": t}})
+
+
+async def test_stream_yields_token_deltas_and_suppresses_snapshot(monkeypatch):
+    async def _fake_query(prompt, options):
+        yield _text_delta("Hel")
+        yield _text_delta("lo")
+        yield _AM("Hello")  # final complete snapshot — must NOT be re-yielded
+    monkeypatch.setattr(llm, "query", _fake_query)
+    monkeypatch.setattr(llm, "AssistantMessage", _AM)
+    monkeypatch.setattr(llm, "StreamEvent", _SE)
+    out = [t async for t in llm.ClaudeProvider().stream("sys", "hi")]
+    assert out == ["Hel", "lo"]
+
+
+async def test_stream_ignores_non_text_stream_events(monkeypatch):
+    async def _fake_query(prompt, options):
+        # A non-text delta (e.g. thinking) is ignored; text still streams; snapshot skipped.
+        yield _SE({"type": "content_block_delta",
+                   "delta": {"type": "thinking_delta", "thinking": "..."}})
+        yield _text_delta("hi")
+        yield _AM("hi")
+    monkeypatch.setattr(llm, "query", _fake_query)
+    monkeypatch.setattr(llm, "AssistantMessage", _AM)
+    monkeypatch.setattr(llm, "StreamEvent", _SE)
+    out = [t async for t in llm.ClaudeProvider().stream("sys", "hi")]
+    assert out == ["hi"]
+
+
+async def test_stream_am_only_fallback_unchanged(monkeypatch):
+    # No StreamEvents in the stream → fall back to yielding AssistantMessage text
+    # (keeps every existing AM-only mock working exactly as before).
+    async def _fake_query(prompt, options):
+        yield _AM("a"); yield _AM("b")
+    monkeypatch.setattr(llm, "query", _fake_query)
+    monkeypatch.setattr(llm, "AssistantMessage", _AM)
+    out = [t async for t in llm.ClaudeProvider().stream("sys", "hi")]
+    assert out == ["a", "b"]

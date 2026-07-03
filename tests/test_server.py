@@ -179,6 +179,35 @@ def test_sse_stream(tmp_path, monkeypatch):
         assert "citations" in body
 
 
+def test_sse_data_preserves_newlines():
+    """_sse_data frames one `data:` line per newline so multi-line deltas survive."""
+    from raggity.server import _sse_data
+    assert _sse_data("hello") == "data: hello\n\n"
+    assert _sse_data("a\nb") == "data: a\ndata: b\n\n"
+
+
+def test_sse_session_error_is_generic(tmp_path, monkeypatch):
+    """An error inside the session (achat_stream) branch yields a generic event: error."""
+    from raggity.server import create_app
+    from raggity.core import Raggity
+    app = create_app(_cfg(tmp_path))
+    with TestClient(app) as client:
+        client.post("/ingest")
+
+        async def _boom(self, conv, question):
+            raise RuntimeError("secret traceback detail")
+            yield  # pragma: no cover — makes this an async generator
+        monkeypatch.setattr(Raggity, "achat_stream", _boom)
+
+        with client.stream("GET", "/ask/stream",
+                           params={"question": "q?", "session_id": "s1"}) as resp:
+            assert resp.status_code == 200
+            body = "".join(resp.iter_text())
+        assert "event: error" in body
+        assert "internal error" in body
+        assert "secret traceback detail" not in body
+
+
 def test_sse_stream_with_session(tmp_path, monkeypatch):
     """GET /ask/stream?session_id=... returns SSE and includes session_id in done event."""
     from raggity.server import create_app

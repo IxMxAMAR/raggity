@@ -303,6 +303,48 @@ async def test_build_graph_processes_all_chunks(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# build_graph() – parallel execution stays deterministic & fault-tolerant
+# ---------------------------------------------------------------------------
+
+def _norm(store):
+    """Order-preserving (node_key, label, sorted chunk_ids) view for comparison."""
+    return [(n, store._graph.nodes[n]["label"],
+             sorted(store._graph.nodes[n].get("chunk_ids", set())))
+            for n in store._graph.nodes]
+
+
+async def test_build_graph_parallel_equals_serial_and_tolerates_raising(monkeypatch):
+    """Parallel build == serial build (deterministic order); a raising chunk contributes nothing."""
+    from raggity.graph import build_graph
+
+    class _Chunk:
+        def __init__(self, text, cid): self.text = text; self.chunk_id = cid
+
+    responses = {
+        "TXT1": "E: Alpha\nE: Beta\nR: Alpha | rel | Beta\n",
+        "TXT2": "E: Gamma\nR: Gamma | rel | Alpha\n",
+        "TXT3": "BOOM",  # sentinel → extraction raises for this chunk
+    }
+
+    async def _fake_query(prompt, options):
+        key = next((k for k in responses if k in prompt), None)
+        if responses.get(key) == "BOOM":
+            raise RuntimeError("extract failed for this chunk")
+        yield _AM(responses.get(key, ""))
+
+    monkeypatch.setattr(llm, "query", _fake_query)
+    monkeypatch.setattr(llm, "AssistantMessage", _AM)
+
+    chunks = [_Chunk("TXT1", "c1"), _Chunk("TXT2", "c2"), _Chunk("TXT3", "c3")]
+    parallel = await build_graph(chunks, llm.ClaudeProvider(), concurrency=8)
+    serial = await build_graph(chunks, llm.ClaudeProvider(), concurrency=1)
+
+    assert _norm(parallel) == _norm(serial)
+    labels = {parallel._graph.nodes[n]["label"] for n in parallel._graph.nodes}
+    assert {"Alpha", "Beta", "Gamma"} <= labels  # the raising chunk added nothing extra
+
+
+# ---------------------------------------------------------------------------
 # Config – graph fields default to off
 # ---------------------------------------------------------------------------
 

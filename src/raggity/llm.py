@@ -24,13 +24,20 @@ _ANTHROPIC_CRED_VARS = {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"}
 query = None
 ClaudeAgentOptions = None
 AssistantMessage = None
+# StreamEvent carries the SDK's incremental partial-message deltas. It is
+# feature-detected (older SDKs lack it): when unavailable it stays None and the
+# provider falls back to yielding the final AssistantMessage snapshot only —
+# i.e. exactly today's behavior. Its own resolve flag avoids re-importing the
+# SDK on every call in the (rare) case the class is genuinely absent.
+StreamEvent = None
+_stream_event_checked = False
 
 
 def _ensure_sdk() -> None:
-    """Import claude_agent_sdk on first real use, filling in whichever of the three
+    """Import claude_agent_sdk on first real use, filling in whichever of the
     module globals above are still unset (None). No-op if all are already bound
     (either by a prior real call, or by a test's monkeypatch)."""
-    global query, ClaudeAgentOptions, AssistantMessage
+    global query, ClaudeAgentOptions, AssistantMessage, StreamEvent, _stream_event_checked
     if query is None:
         from claude_agent_sdk import query as _query
         query = _query
@@ -40,6 +47,13 @@ def _ensure_sdk() -> None:
     if AssistantMessage is None:
         from claude_agent_sdk import AssistantMessage as _AssistantMessage
         AssistantMessage = _AssistantMessage
+    if StreamEvent is None and not _stream_event_checked:
+        _stream_event_checked = True
+        try:
+            from claude_agent_sdk import StreamEvent as _StreamEvent
+            StreamEvent = _StreamEvent
+        except Exception:
+            StreamEvent = None
 
 
 class LLMProvider(ABC):
@@ -68,15 +82,34 @@ class ClaudeProvider(LLMProvider):
         _ensure_sdk()
         kw = dict(system_prompt=system, model=self.model,
                   allowed_tools=[], permission_mode="dontAsk",
-                  setting_sources=[], max_turns=1)
+                  setting_sources=[], max_turns=1,
+                  include_partial_messages=True)
         if env is not None:
             kw["env"] = env
         return ClaudeAgentOptions(**kw)
 
     async def stream(self, system: str, prompt: str):
         opts = self._options(system)
+        streamed = False  # whether any incremental text delta was yielded this turn
         async for message in query(prompt=prompt, options=opts):
-            if isinstance(message, AssistantMessage):
+            if StreamEvent is not None and isinstance(message, StreamEvent):
+                # Real token streaming: the SDK forwards raw Anthropic API stream
+                # events. Text arrives as content_block_delta / text_delta.
+                ev = getattr(message, "event", None) or {}
+                if ev.get("type") == "content_block_delta":
+                    delta = ev.get("delta") or {}
+                    if delta.get("type") == "text_delta":
+                        t = delta.get("text")
+                        if t:
+                            streamed = True
+                            yield t
+            elif isinstance(message, AssistantMessage):
+                # The final AssistantMessage is one complete snapshot. If we already
+                # streamed the text via deltas this turn, suppress it to avoid
+                # duplication; otherwise (no partial events — e.g. every existing
+                # mock) yield it, preserving today's behavior.
+                if streamed:
+                    continue
                 for block in message.content:
                     t = getattr(block, "text", None)
                     if t:

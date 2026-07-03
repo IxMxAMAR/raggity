@@ -480,3 +480,97 @@ def test_core_chat_two_turns_appends_conversation(tmp_path, monkeypatch):
     assert len(conv.turns) == 4
     assert conv.turns[0] == ("user", "how are backups done?")
     assert conv.turns[2] == ("user", "where exactly?")
+
+
+# ---------------------------------------------------------------------------
+# v0.9.0 Task 5a: achat_stream — token deltas + turn recording + disconnect
+# ---------------------------------------------------------------------------
+
+def _stream_cfg(tmp_path):
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    return RaggityConfig(sources=SourcesConfig(include=[str(notes / "*.md")]),
+                         index=IndexConfig(path=str(tmp_path / "idx")))
+
+
+def test_achat_stream_yields_deltas_and_records_turns(tmp_path, monkeypatch):
+    import asyncio
+    from raggity.core import Raggity
+    from raggity.conversation import Conversation
+    from raggity.models import Answer
+
+    async def _fake(prompt, options):
+        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+    monkeypatch.setattr(llm_mod, "query", _fake)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    rag = Raggity(_stream_cfg(tmp_path)); rag.ingest()
+    conv = Conversation()
+
+    async def _run():
+        deltas, final = [], None
+        async for piece in rag.achat_stream(conv, "how are backups done?"):
+            if isinstance(piece, Answer):
+                final = piece
+            else:
+                deltas.append(piece)
+        return deltas, final
+
+    deltas, final = asyncio.run(_run())
+    assert "".join(deltas)  # streamed some text
+    assert final is not None and "NAS" in final.text
+    # Turns recorded ONLY after the final Answer.
+    assert conv.turns == [("user", "how are backups done?"),
+                          ("assistant", final.text)]
+
+
+def test_achat_stream_disconnect_records_no_turns(tmp_path, monkeypatch):
+    import asyncio
+    from raggity.core import Raggity
+    from raggity.conversation import Conversation
+
+    async def _fake(prompt, options):
+        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+    monkeypatch.setattr(llm_mod, "query", _fake)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    rag = Raggity(_stream_cfg(tmp_path)); rag.ingest()
+    conv = Conversation()
+
+    async def _run():
+        agen = rag.achat_stream(conv, "how are backups done?")
+        await agen.__anext__()  # pull first delta, then simulate client disconnect
+        with pytest.raises(asyncio.CancelledError):
+            await agen.athrow(asyncio.CancelledError)
+
+    asyncio.run(_run())
+    assert conv.turns == []  # no half-turn recorded on mid-stream disconnect
+
+
+def test_transform_cache_hit_skips_second_expand_call(tmp_path, monkeypatch):
+    """With expand + cache on, a repeat question reuses the cached query expansion."""
+    from raggity.config import RetrievalConfig
+    from raggity.core import Raggity
+
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(sources=SourcesConfig(include=[str(notes / "*.md")]),
+                        index=IndexConfig(path=str(tmp_path / "idx")),
+                        retrieval=RetrievalConfig(expand=True))
+    cfg.generation.cache = True
+
+    expand_calls = {"n": 0}
+
+    async def _fake(prompt, options):
+        if "alternative phrasings" in prompt:
+            expand_calls["n"] += 1
+            yield _AssistantMessage("rephrase one\nrephrase two")
+        else:
+            yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+    monkeypatch.setattr(llm_mod, "query", _fake)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    rag = Raggity(cfg); rag.ingest()
+    rag.ask("how are backups done?")
+    rag.ask("how are backups done?")  # same question → transform-cache hit
+    assert expand_calls["n"] == 1

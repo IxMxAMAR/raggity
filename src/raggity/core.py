@@ -224,7 +224,8 @@ class Raggity:
         chunks = self.store.all_chunks()
         if not chunks:
             return
-        graph = await _build_graph(chunks, self.provider)
+        graph = await _build_graph(chunks, self.provider,
+                                   concurrency=self.cfg.retrieval.graph_concurrency)
         os.makedirs(self.cfg.index.path, exist_ok=True)
         graph.save(self._graph_path())
         self._graph = graph
@@ -314,47 +315,121 @@ class Raggity:
         self._save_connector_manifest(manifest)
         return len(docs)
 
-    async def _graph_neighborhood_ids(self, question: str) -> list[str]:
+    async def _cached_transform(self, kind: str, question: str, n: int,
+                                use_cache: bool, compute):
+        """Return a query-transform / graph-extract output, optionally cached.
+
+        When *use_cache* is set the result is memoised in the answer-cache JSON
+        file under a ``tf:`` key (see :func:`cache.transform_key`) using the same
+        reload-merge-under-lock discipline as answer caching, so a repeat of the
+        same question skips the provider call.  *compute* is an async callable
+        returning a JSON-serialisable payload dict.
+        """
+        if not use_cache:
+            return await compute()
+        from . import cache as _cache
+        if self._cache_lock is None:
+            self._cache_lock = asyncio.Lock()
+        key = _cache.transform_key(kind, question, self.cfg.generation.model, n)
+        async with self._cache_lock:
+            data = _cache.load(self._cache_path())
+            if key in data:
+                return data[key]
+        value = await compute()
+        async with self._cache_lock:
+            data = _cache.load(self._cache_path())
+            data[key] = value
+            _cache.save(self._cache_path(), data)
+        return value
+
+    async def _graph_neighborhood_ids(self, question: str,
+                                      use_cache: bool = False) -> list[str]:
         """Return chunk ids from the graph neighborhood of question entities (when graph is on)."""
         if not self.cfg.retrieval.graph or self._graph is None:
             return []
         from .graph import extract
-        try:
+
+        async def _compute():
             entities, _ = await extract(question, self.provider)
+            return {"entities": entities}
+
+        try:
+            payload = await self._cached_transform(
+                "graph_entities", question, 0, use_cache, _compute)
         except Exception:
             return []
+        entities = payload.get("entities", [])
         nodes = self._graph.link(entities)
         ids = self._graph.neighborhood_chunk_ids(nodes, hops=self.cfg.retrieval.graph_hops)
         return list(ids)
 
-    async def _build_queries(self, question: str, expand, hyde, step_back) -> list[str]:
+    async def _build_queries(self, question: str, expand, hyde, step_back,
+                             use_cache: bool = False) -> list[str]:
         import logging as _logging
         _log = _logging.getLogger("raggity.core")
         rc = self.cfg.retrieval
         use_expand = rc.expand if expand is None else expand
         use_hyde = rc.hyde if hyde is None else hyde
         use_step = rc.step_back if step_back is None else step_back
-        if use_expand:
+
+        async def _do_expand() -> list[str]:
+            if not use_expand:
+                return [question]
             from .query_transform import generate_query_variations
+
+            async def _compute():
+                qs = await generate_query_variations(question, rc.expand_n, self.provider)
+                return {"queries": qs}
+
             try:
-                queries = await generate_query_variations(question, rc.expand_n, self.provider)
+                payload = await self._cached_transform(
+                    "expand", question, rc.expand_n, use_cache, _compute)
+                return payload.get("queries") or [question]
             except Exception as exc:
                 _log.warning("query expand failed, falling back to base query: %s", exc)
-                queries = [question]
-        else:
-            queries = [question]
-        if use_hyde:
+                return [question]
+
+        async def _do_hyde() -> str | None:
+            if not use_hyde:
+                return None
             from .query_transform import generate_hyde_document
+
+            async def _compute():
+                return {"text": await generate_hyde_document(question, self.provider)}
+
             try:
-                queries.append(await generate_hyde_document(question, self.provider))
+                payload = await self._cached_transform(
+                    "hyde", question, 0, use_cache, _compute)
+                return payload.get("text")
             except Exception as exc:
                 _log.warning("HyDE generation failed, skipping: %s", exc)
-        if use_step:
+                return None
+
+        async def _do_step() -> str | None:
+            if not use_step:
+                return None
             from .query_transform import generate_step_back_question
+
+            async def _compute():
+                return {"text": await generate_step_back_question(question, self.provider)}
+
             try:
-                queries.append(await generate_step_back_question(question, self.provider))
+                payload = await self._cached_transform(
+                    "step_back", question, 0, use_cache, _compute)
+                return payload.get("text")
             except Exception as exc:
                 _log.warning("step_back generation failed, skipping: %s", exc)
+                return None
+
+        # Enabled transforms run concurrently; each carries its own fallback so
+        # gather never sees an exception.
+        expand_qs, hyde_text, step_text = await asyncio.gather(
+            _do_expand(), _do_hyde(), _do_step())
+        queries = list(expand_qs)
+        if hyde_text is not None:
+            queries.append(hyde_text)
+        if step_text is not None:
+            queries.append(step_text)
         return queries
 
     def ask(self, question: str, expand: bool | None = None,
@@ -366,8 +441,12 @@ class Raggity:
     async def aask(self, question: str, expand: bool | None = None,
                    hyde: bool | None = None, step_back: bool | None = None,
                    use_cache: bool | None = None) -> Answer:
-        queries = await self._build_queries(question, expand, hyde, step_back)
-        graph_ids = await self._graph_neighborhood_ids(question)
+        use_cache = self.cfg.generation.cache if use_cache is None else use_cache
+        # Concurrent prelude: query transforms + graph neighborhood run together.
+        queries, graph_ids = await asyncio.gather(
+            self._build_queries(question, expand, hyde, step_back, use_cache=use_cache),
+            self._graph_neighborhood_ids(question, use_cache=use_cache),
+        )
         with span("retrieve", query=question, query_count=len(queries),
                   graph_ids=len(graph_ids)):
             if queries == [question] and not graph_ids:
@@ -376,7 +455,6 @@ class Raggity:
                 chunks = await asyncio.to_thread(
                     self.retriever.retrieve_multi, queries, question,
                     graph_chunk_ids=graph_ids or None)
-        use_cache = self.cfg.generation.cache if use_cache is None else use_cache
         if use_cache:
             from . import cache as _cache
             from .prompts import SYSTEM_PROMPT as _SYSTEM_PROMPT
@@ -387,13 +465,18 @@ class Raggity:
                 question, [c.chunk_id for c in chunks],
                 self.cfg.generation.model, system_prompt=_SYSTEM_PROMPT,
             )
+            # Narrowed lock: check under lock, GENERATE OUTSIDE the lock (so
+            # concurrent distinct-question generations do not serialize), then
+            # reload-merge-save under the lock again (idempotent overwrite).
             async with self._cache_lock:
                 data = _cache.load(self._cache_path())
                 if key in data:
                     return _cache.answer_from_dict(data[key])
-                with span("generate", backend=self.cfg.generation.backend,
-                          model=self.cfg.generation.model, chunk_count=len(chunks)):
-                    answer = await self.answerer.answer(question, chunks)
+            with span("generate", backend=self.cfg.generation.backend,
+                      model=self.cfg.generation.model, chunk_count=len(chunks)):
+                answer = await self.answerer.answer(question, chunks)
+            async with self._cache_lock:
+                data = _cache.load(self._cache_path())
                 data[key] = _cache.answer_to_dict(answer)
                 _cache.save(self._cache_path(), data)
             return answer
@@ -424,8 +507,11 @@ class Raggity:
                           hyde: bool | None = None, step_back: bool | None = None,
                           use_cache: bool | None = None):
         """Yield text-delta str items then a final Answer, streaming from the answerer."""
-        queries = await self._build_queries(question, expand, hyde, step_back)
-        graph_ids = await self._graph_neighborhood_ids(question)
+        use_cache = self.cfg.generation.cache if use_cache is None else use_cache
+        queries, graph_ids = await asyncio.gather(
+            self._build_queries(question, expand, hyde, step_back, use_cache=use_cache),
+            self._graph_neighborhood_ids(question, use_cache=use_cache),
+        )
         if queries == [question] and not graph_ids:
             chunks = await asyncio.to_thread(self.retriever.retrieve, question)
         else:
@@ -453,6 +539,36 @@ class Raggity:
         conversation.add("user", question)
         conversation.add("assistant", answer.text)
         return answer
+
+    async def achat_stream(self, conversation: Conversation, question: str):
+        """Stream a multi-turn chat answer: yield text deltas, then the final Answer.
+
+        Retrieval is history-aware (same query as :meth:`achat`).  Both the user
+        turn and the assistant answer are appended to *conversation* ONLY after
+        the final :class:`Answer` arrives — so a client disconnect mid-stream
+        (which surfaces as ``CancelledError``/``GeneratorExit`` and is
+        deliberately NOT caught here) leaves no half-recorded turn.
+        """
+        retrieval_q = conversation.retrieval_query(question)
+        graph_ids = await self._graph_neighborhood_ids(retrieval_q)
+        if graph_ids:
+            chunks = await asyncio.to_thread(
+                self.retriever.retrieve_multi, [retrieval_q], retrieval_q,
+                graph_chunk_ids=graph_ids)
+        else:
+            chunks = await asyncio.to_thread(self.retriever.retrieve, retrieval_q)
+        history = conversation.recent(6)
+        final: Answer | None = None
+        async for piece in self.answerer.answer_stream(
+                question, chunks, history=history or None):
+            if isinstance(piece, Answer):
+                final = piece
+            else:
+                yield piece
+        if final is not None:
+            conversation.add("user", question)
+            conversation.add("assistant", final.text)
+            yield final
 
     def chat(self, conversation: Conversation, question: str) -> Answer:
         """Synchronous wrapper for :meth:`achat`."""

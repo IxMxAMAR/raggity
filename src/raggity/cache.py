@@ -20,6 +20,18 @@ def cache_key(question: str, chunk_ids: list[str], model: str,
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def transform_key(kind: str, question: str, model: str, n: int = 0) -> str:
+    """Stable key for a cached query-transform / graph-extract output.
+
+    Prefixed ``tf:`` so it never collides with :func:`cache_key` answer entries
+    that share the same JSON cache file.  Transform outputs are index-independent
+    (they depend only on the question + model + kind), so there is no staleness to
+    invalidate.
+    """
+    payload = f"{kind}|{question}|{model}|{n}"
+    return "tf:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def load(path: str) -> dict:
     if not os.path.isfile(path):
         return {}

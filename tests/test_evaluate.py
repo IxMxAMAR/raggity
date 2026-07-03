@@ -57,9 +57,10 @@ def test_llm_judge_averages_verdicts(tmp_path, monkeypatch):
     class _AM:
         def __init__(self, t): self.content = [_Block(t)]
 
-    # Both answerer and judge go through llm_mod.query (via ClaudeProvider)
+    # Both answerer and judge go through llm_mod.query (via ClaudeProvider).
+    # The merged judge expects two labeled lines; the answerer just echoes them.
     async def _fake(prompt, options):
-        yield _AM("YES")
+        yield _AM("FAITHFUL: YES\nRELEVANT: YES")
     monkeypatch.setattr(llm_mod, "query", _fake)
     monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
 
@@ -74,6 +75,20 @@ def test_llm_judge_averages_verdicts(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # Fix 4: golden-row schema validation + empty-golden div-by-zero guard
 # ---------------------------------------------------------------------------
+
+def test_parse_judge_truth_table():
+    """_parse_judge reads two labeled lines; missing/garbled → False (NO)."""
+    from raggity.evaluate import _parse_judge
+    assert _parse_judge("FAITHFUL: YES\nRELEVANT: YES") == (True, True)
+    assert _parse_judge("FAITHFUL: NO\nRELEVANT: YES") == (False, True)
+    assert _parse_judge("FAITHFUL: YES\nRELEVANT: NO") == (True, False)
+    # case-insensitive + surrounding prose lines ignored
+    assert _parse_judge("here you go\nfaithful: yes\nrelevant: no") == (True, False)
+    # garbled / missing lines default to False
+    assert _parse_judge("totally unparseable") == (False, False)
+    assert _parse_judge("FAITHFUL: YES") == (True, False)
+    assert _parse_judge("") == (False, False)
+
 
 def test_evaluate_malformed_row_raises_with_row_index():
     """A row missing 'question' raises ValueError mentioning the row index."""
