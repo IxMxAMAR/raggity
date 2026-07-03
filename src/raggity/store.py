@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from typing import Callable
 
 from .models import Chunk
 from .registry import register
@@ -50,7 +51,7 @@ class VectorStore(ABC):
     def all_chunks(self) -> list[Chunk]: ...
     @classmethod
     @abstractmethod
-    def from_config(cls, cfg, dim: int) -> "VectorStore": ...
+    def from_config(cls, cfg, dim: "int | Callable[[], int]") -> "VectorStore": ...
 
 
 def _list_table_names(db) -> list[str]:
@@ -82,13 +83,28 @@ def _row_to_chunk(row: dict, score: float = 0.0) -> Chunk:
 
 
 class LanceDBStore(VectorStore):
-    def __init__(self, path: str, dim: int) -> None:
+    def __init__(self, path: str, dim: "int | Callable[[], int]") -> None:
         import lancedb
-        import pyarrow as pa
 
+        # ``dim`` may be an int or a zero-arg callable resolved only when a
+        # table actually has to be created (deferred so opening an existing
+        # index never builds the embedder just to learn its dimension).
         self._dim = dim
         self._db = lancedb.connect(path)
-        self._schema = pa.schema([
+        if TABLE in _list_table_names(self._db):
+            self._tbl = self._db.open_table(TABLE)
+        else:
+            self._tbl = None  # created lazily on first write
+        self._fts_ready = False
+
+    def _resolve_dim(self) -> int:
+        d = self._dim
+        return d() if callable(d) else d
+
+    def _build_schema(self):
+        import pyarrow as pa
+        dim = self._resolve_dim()
+        return pa.schema([
             pa.field("chunk_id", pa.string()),
             pa.field("source_path", pa.string()),
             pa.field("title", pa.string()),
@@ -99,11 +115,11 @@ class LanceDBStore(VectorStore):
             pa.field("parent_text", pa.string()),
             pa.field("vector", pa.list_(pa.float32(), dim)),
         ])
-        if TABLE in _list_table_names(self._db):
-            self._tbl = self._db.open_table(TABLE)
-        else:
-            self._tbl = self._db.create_table(TABLE, schema=self._schema)
-        self._fts_ready = False
+
+    def _require_tbl_for_write(self):
+        if self._tbl is None:
+            self._tbl = self._db.create_table(TABLE, schema=self._build_schema())
+        return self._tbl
 
     def _ensure_fts(self) -> None:
         if not self._fts_ready:
@@ -119,6 +135,7 @@ class LanceDBStore(VectorStore):
     def upsert(self, chunks: list[Chunk], embedder) -> None:
         if not chunks:
             return
+        tbl = self._require_tbl_for_write()
         vectors = embedder.embed_documents([c.text for c in chunks])
         rows = [{
             "chunk_id": c.chunk_id,
@@ -131,19 +148,21 @@ class LanceDBStore(VectorStore):
             "parent_text": c.parent_text,
             "vector": vec,
         } for c, vec in zip(chunks, vectors)]
-        (self._tbl.merge_insert("chunk_id")
+        (tbl.merge_insert("chunk_id")
             .when_matched_update_all()
             .when_not_matched_insert_all()
             .execute(rows))
         self._fts_ready = False
 
     def delete_source(self, source_path: str) -> None:
+        if self._tbl is None:
+            return
         safe = source_path.replace("'", "''")
         self._tbl.delete(f"source_path = '{safe}'")
         self._fts_ready = False
 
     def delete_sources(self, source_paths: list[str]) -> None:
-        if not source_paths:
+        if not source_paths or self._tbl is None:
             return
         escaped = ", ".join(
             f"'{p.replace(chr(39), chr(39) + chr(39))}'" for p in source_paths
@@ -152,6 +171,8 @@ class LanceDBStore(VectorStore):
         self._fts_ready = False
 
     def vector_search(self, query_vec: list[float], limit: int) -> list[Chunk]:
+        if self._tbl is None:
+            return []
         rows = (self._tbl.search(query_vec)
                 .metric("cosine").limit(limit).to_list())
         out = []
@@ -162,6 +183,8 @@ class LanceDBStore(VectorStore):
         return out
 
     def text_search(self, query: str, limit: int) -> list[Chunk]:
+        if self._tbl is None:
+            return []
         self._ensure_fts()
         try:
             rows = (self._tbl.search(query, query_type="fts")
@@ -187,26 +210,30 @@ class LanceDBStore(VectorStore):
             return {r["source_path"] for r in rows}
 
     def count(self) -> int:
+        if self._tbl is None:
+            return 0
         return self._tbl.count_rows()
 
     def reset(self) -> None:
         if TABLE in _list_table_names(self._db):
             self._db.drop_table(TABLE)
-        self._tbl = self._db.create_table(TABLE, schema=self._schema)
+        self._tbl = self._db.create_table(TABLE, schema=self._build_schema())
         self._fts_ready = False
 
     def optimize(self) -> None:
+        if self._tbl is None:
+            return
         try:
             self._tbl.optimize()
         except Exception:
             pass
 
     @classmethod
-    def from_config(cls, cfg, dim: int) -> "LanceDBStore":
+    def from_config(cls, cfg, dim: "int | Callable[[], int]") -> "LanceDBStore":
         return cls(path=cfg.index.path, dim=dim)
 
     def ensure_ann_index(self, threshold: int) -> None:
-        if threshold <= 0 or self.count() < threshold:
+        if self._tbl is None or threshold <= 0 or self.count() < threshold:
             return
         try:
             self._tbl.create_index(metric="cosine", vector_column_name="vector", replace=True)
@@ -214,7 +241,7 @@ class LanceDBStore(VectorStore):
             log.warning("ANN index build skipped: %s", exc)
 
     def get_by_chunk_ids(self, ids: list[str]) -> list[Chunk]:
-        if not ids:
+        if not ids or self._tbl is None:
             return []
         # Build a SQL-safe IN predicate with single-quote escaping
         escaped = ", ".join(f"'{i.replace(chr(39), chr(39)+chr(39))}'" for i in ids)

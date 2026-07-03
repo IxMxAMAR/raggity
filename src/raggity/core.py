@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
 
 
 def _run_async(coro):
@@ -40,36 +41,38 @@ from .observability import init_tracing, span
 
 _GRAPH_JSON = "graph.json"
 
+# Sentinel for un-built lazy component slots.  A dedicated object (not ``None``)
+# so that legitimately-``None`` components (e.g. a disabled reranker) are cached
+# and not rebuilt on every access.
+_UNSET = object()
+
 
 class Raggity:
-    def __init__(self, cfg: RaggityConfig | None = None) -> None:
+    def __init__(self, cfg: RaggityConfig | None = None, *,
+                 _shared_from: "Raggity | None" = None) -> None:
         self.cfg = cfg or RaggityConfig()
-        base = FastEmbedEmbedder(
-            model_name=self.cfg.embedding.model,
-            provider=self.cfg.embedding.provider,
-            batch_size=self.cfg.embedding.batch_size,
-            parallel=self.cfg.embedding.parallel,
-        )
-        if self.cfg.embedding.cache:
-            from .cached_embedder import CachedEmbedder
-            self.embedder = CachedEmbedder(base, os.path.join(self.cfg.index.path, "embed_cache.json"))
-        else:
-            self.embedder = base
-        store_cls = resolve("store", self.cfg.index.backend)
-        self.store = store_cls.from_config(self.cfg, self.embedder.dim)
-        self.reranker = None
-        if self.cfg.retrieval.rerank:
-            from .reranker import FastEmbedReranker
-            self.reranker = FastEmbedReranker(model_name=self.cfg.retrieval.rerank_model)
-        self.retriever = Retriever(self.embedder, self.store, self.reranker,
-                                   self.cfg.retrieval)
-        self.provider = build_provider(self.cfg.generation)
-        self.answerer = ProviderAnswerer(self.provider)
-        # Initialise tracing (no-op when observability.tracing=False)
+        # When set, heavy *stateless* models (raw embedder, reranker, LLM
+        # provider) are borrowed from this base instance instead of rebuilt —
+        # onnxruntime InferenceSession.run() is thread-safe, so one model can be
+        # shared across tenant threads.  The store and the (per-tenant) cached
+        # embedder wrapper are always this instance's own.
+        self._shared = _shared_from
+        # RLock (not Lock): the retriever factory re-enters to build embedder /
+        # store / reranker while already holding the lock.
+        self._build_lock = threading.RLock()
+        self._raw_embedder = _UNSET
+        self._embedder = _UNSET
+        self._store = _UNSET
+        self._reranker = _UNSET
+        self._provider = _UNSET
+        self._answerer = _UNSET
+        self._retriever = _UNSET
+
+        # Initialise tracing (no-op when observability.tracing=False) — eager.
         init_tracing(self.cfg)
         # Lock for concurrent answer-cache load→mutate→save cycle
         self._cache_lock: asyncio.Lock | None = None
-        # Graph store: lazy-load from disk when graph=true
+        # Graph store: eager load-on-init from disk when graph=true.
         self._graph = None
         if self.cfg.retrieval.graph:
             graph_path = self._graph_path()
@@ -78,6 +81,84 @@ class Raggity:
                 g = GraphStore()
                 g.load(graph_path)
                 self._graph = g
+
+    # -- lazy component construction --------------------------------------
+    def _lazy(self, slot: str, factory):
+        """Double-checked lazy build of ``self.<slot>`` under ``_build_lock``."""
+        cur = getattr(self, slot)
+        if cur is not _UNSET:
+            return cur
+        with self._build_lock:
+            cur = getattr(self, slot)
+            if cur is not _UNSET:
+                return cur
+            val = factory()
+            setattr(self, slot, val)
+            return val
+
+    @property
+    def raw_embedder(self):
+        def _factory():
+            if self._shared is not None:
+                return self._shared.raw_embedder
+            return FastEmbedEmbedder(
+                model_name=self.cfg.embedding.model,
+                provider=self.cfg.embedding.provider,
+                batch_size=self.cfg.embedding.batch_size,
+                parallel=self.cfg.embedding.parallel,
+            )
+        return self._lazy("_raw_embedder", _factory)
+
+    @property
+    def embedder(self):
+        def _factory():
+            raw = self.raw_embedder
+            if self.cfg.embedding.cache:
+                from .cached_embedder import CachedEmbedder
+                return CachedEmbedder(
+                    raw, os.path.join(self.cfg.index.path, "embed_cache.sqlite"))
+            return raw
+        return self._lazy("_embedder", _factory)
+
+    @property
+    def store(self):
+        def _factory():
+            store_cls = resolve("store", self.cfg.index.backend)
+            # Pass dim as a callable so an existing index opens without building
+            # the embedder just to learn its dimension.
+            return store_cls.from_config(self.cfg, lambda: self.embedder.dim)
+        return self._lazy("_store", _factory)
+
+    @property
+    def reranker(self):
+        def _factory():
+            if not self.cfg.retrieval.rerank:
+                return None
+            if self._shared is not None:
+                return self._shared.reranker
+            from .reranker import FastEmbedReranker
+            return FastEmbedReranker(model_name=self.cfg.retrieval.rerank_model)
+        return self._lazy("_reranker", _factory)
+
+    @property
+    def provider(self):
+        def _factory():
+            if self._shared is not None:
+                return self._shared.provider
+            return build_provider(self.cfg.generation)
+        return self._lazy("_provider", _factory)
+
+    @property
+    def answerer(self):
+        return self._lazy("_answerer", lambda: ProviderAnswerer(self.provider))
+
+    @property
+    def retriever(self):
+        return self._lazy(
+            "_retriever",
+            lambda: Retriever(self.embedder, self.store, self.reranker,
+                              self.cfg.retrieval),
+        )
 
     @classmethod
     def from_config(cls, path: str | None = None) -> "Raggity":
@@ -112,7 +193,8 @@ class Raggity:
         new_cfg = self.cfg.model_copy(deep=True)
         new_cfg.index.path = os.path.join(self.cfg.index.path, "users", slug)
         new_cfg.index.qdrant_collection = f"{self.cfg.index.qdrant_collection}_{slug}"
-        return Raggity(new_cfg)
+        # Share heavy models with this base instance (cheap tenant construction).
+        return Raggity(new_cfg, _shared_from=self)
 
     def _manifest_path(self) -> str:
         return os.path.join(self.cfg.index.path, "manifest.json")
@@ -385,20 +467,28 @@ class Raggity:
         }
 
     async def close(self) -> None:
-        """Release underlying resources (provider connection + store handle).
+        """Release underlying resources (best-effort).
 
-        Best-effort: the LLM provider's ``aclose()`` is awaited, and the store is
-        closed if it exposes ``close``/``aclose``/``__exit__``.  Some stores
-        (LanceDB/Qdrant local) hold no closeable handle — that is fine.
+        Reads component slots directly (never the lazy properties) so closing an
+        instance never *builds* anything.  Ownership rules:
+
+        - The store and the (per-instance) cached-embedder connection are always
+          this instance's own → closed here.
+        - The LLM provider is closed only by a root instance (``_shared`` is
+          ``None``); a tenant borrows the base's provider and must not close it.
+        - Shared raw embedder / reranker are never closed by anyone here.
         """
-        provider = getattr(self, "provider", None)
-        if provider is not None:
-            try:
-                await provider.aclose()
-            except Exception:
-                pass
-        store = getattr(self, "store", None)
-        if store is not None:
+        # Provider: root-only (tenants share the base's provider).
+        if self._shared is None:
+            provider = self.__dict__.get("_provider", _UNSET)
+            if provider is not None and provider is not _UNSET:
+                try:
+                    await provider.aclose()
+                except Exception:
+                    pass
+        # Store: always own.
+        store = self.__dict__.get("_store", _UNSET)
+        if store is not None and store is not _UNSET:
             try:
                 aclose = getattr(store, "aclose", None)
                 if aclose is not None:
@@ -413,3 +503,12 @@ class Raggity:
                             exit_(None, None, None)
             except Exception:
                 pass
+        # Cached-embedder sqlite connection: per-instance, safe to close.
+        embedder = self.__dict__.get("_embedder", _UNSET)
+        if embedder is not None and embedder is not _UNSET:
+            closer = getattr(embedder, "close", None)
+            if closer is not None:
+                try:
+                    closer()
+                except Exception:
+                    pass

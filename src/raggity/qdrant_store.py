@@ -2,16 +2,20 @@ from __future__ import annotations
 import os
 import uuid
 import warnings
+from typing import Callable
 
 from .models import Chunk
 from .store import VectorStore
 
 
 class QdrantStore(VectorStore):
-    def __init__(self, location: str = ":memory:", dim: int = 384,
+    def __init__(self, location: str = ":memory:",
+                 dim: "int | Callable[[], int]" = 384,
                  collection: str = "raggity", api_key: str | None = None) -> None:
         from qdrant_client import QdrantClient, models
         self._m = models
+        # ``dim`` may be int or a zero-arg callable resolved only when the
+        # collection is actually created (deferred embedder build).
         self._dim = dim
         self._collection = collection
         self._remote = isinstance(location, str) and location.startswith("http")
@@ -24,7 +28,7 @@ class QdrantStore(VectorStore):
         self._ensure_collection()
 
     @classmethod
-    def from_config(cls, cfg, dim: int) -> "QdrantStore":
+    def from_config(cls, cfg, dim: "int | Callable[[], int]") -> "QdrantStore":
         api = os.environ.get("QDRANT_API_KEY") or cfg.index.qdrant_api_key
         return cls(location=cfg.index.qdrant_location, dim=dim,
                    collection=cfg.index.qdrant_collection, api_key=api)
@@ -32,9 +36,10 @@ class QdrantStore(VectorStore):
     def _ensure_collection(self) -> None:
         m = self._m
         if not self._client.collection_exists(self._collection):
+            dim = self._dim() if callable(self._dim) else self._dim
             self._client.create_collection(
                 self._collection,
-                vectors_config=m.VectorParams(size=self._dim, distance=m.Distance.COSINE),
+                vectors_config=m.VectorParams(size=dim, distance=m.Distance.COSINE),
             )
             # Create payload indexes for all modes (remote, local, :memory:).
             # Best-effort: some older qdrant-client / qdrant-local builds reject index
