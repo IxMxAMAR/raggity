@@ -4,12 +4,42 @@ import os
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
 
-from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage
+# Kill claude_agent_sdk's per-call `claude -v` Node subprocess spawn (it reads this
+# from the parent env, not options.env, and runs regardless of caching). Must be set
+# before the SDK is ever imported, so it lives at module import time here.
+os.environ.setdefault("CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK", "1")
 
 log = logging.getLogger("raggity.llm")
 
 # Env vars that carry Anthropic credentials; all are stripped in subscription mode.
 _ANTHROPIC_CRED_VARS = {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"}
+
+# Lazy SDK bindings: claude_agent_sdk's __init__ eagerly imports the full mcp package
+# (incl. server stack), costing ~344ms on every `raggity.llm` import even when no LLM
+# call is ever made (e.g. `rag status`, `rag --help`). Deferred via _ensure_sdk() below.
+# Per-name None guards keep this import-order-independent AND test-patch-safe: the 53
+# `monkeypatch.setattr(llm, "query", ...)` / 52 `AssistantMessage` sites across the
+# test suite set these to non-None fakes, and _ensure_sdk() only fills names that are
+# still None, so it never clobbers a test-injected fake.
+query = None
+ClaudeAgentOptions = None
+AssistantMessage = None
+
+
+def _ensure_sdk() -> None:
+    """Import claude_agent_sdk on first real use, filling in whichever of the three
+    module globals above are still unset (None). No-op if all are already bound
+    (either by a prior real call, or by a test's monkeypatch)."""
+    global query, ClaudeAgentOptions, AssistantMessage
+    if query is None:
+        from claude_agent_sdk import query as _query
+        query = _query
+    if ClaudeAgentOptions is None:
+        from claude_agent_sdk import ClaudeAgentOptions as _ClaudeAgentOptions
+        ClaudeAgentOptions = _ClaudeAgentOptions
+    if AssistantMessage is None:
+        from claude_agent_sdk import AssistantMessage as _AssistantMessage
+        AssistantMessage = _AssistantMessage
 
 
 class LLMProvider(ABC):
@@ -35,18 +65,16 @@ class ClaudeProvider(LLMProvider):
         elif self.auth == "api_key" and not os.environ.get("ANTHROPIC_API_KEY"):
             raise RuntimeError("auth='api_key' but ANTHROPIC_API_KEY is not set. "
                                "Set the key or use auth='subscription' after `claude login`.")
+        _ensure_sdk()
         kw = dict(system_prompt=system, model=self.model,
-                  allowed_tools=[], permission_mode="dontAsk")
+                  allowed_tools=[], permission_mode="dontAsk",
+                  setting_sources=[], max_turns=1)
         if env is not None:
             kw["env"] = env
         return ClaudeAgentOptions(**kw)
 
     async def stream(self, system: str, prompt: str):
         opts = self._options(system)
-        try:
-            opts.include_partial_messages = True
-        except Exception as exc:
-            log.debug("include_partial_messages not supported by SDK version: %s", exc)
         async for message in query(prompt=prompt, options=opts):
             if isinstance(message, AssistantMessage):
                 for block in message.content:

@@ -66,3 +66,32 @@ def test_llm_provider_base_has_aclose():
     import inspect
     # aclose should exist on the base class
     assert hasattr(llm.LLMProvider, "aclose")
+
+
+# Perf (v0.9.0 Task 1): importing raggity.llm must not eagerly pull in claude_agent_sdk
+# (its __init__ drags in the full mcp package incl. server stack -> ~344ms). Run in a
+# subprocess for a clean sys.modules slate, robust regardless of test execution order.
+def test_import_llm_does_not_import_claude_agent_sdk():
+    import subprocess
+    import sys
+    code = (
+        "import sys\n"
+        "import raggity.llm\n"
+        "leaked = [m for m in sys.modules if m == 'claude_agent_sdk' or m.startswith('claude_agent_sdk.')]\n"
+        "assert not leaked, f'claude_agent_sdk leaked into sys.modules: {leaked}'\n"
+        "print('OK')\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "OK" in result.stdout
+
+
+# Perf (v0.9.0 Task 1): _options() should isolate the SDK call from user/project
+# settings and CLAUDE.md (setting_sources=[]) and cap single-shot turns (max_turns=1).
+# Uses the real ClaudeAgentOptions (SDK installed in the test venv) since no query
+# patch is applied here, exercising the real _ensure_sdk() path.
+def test_options_sets_setting_sources_empty_and_max_turns_one():
+    p = llm.ClaudeProvider()
+    opts = p._options("sys")
+    assert opts.setting_sources == []
+    assert opts.max_turns == 1
