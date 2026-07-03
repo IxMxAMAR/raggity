@@ -20,6 +20,10 @@ on:
       version:
         description: "Version to build (e.g. 0.10.0) — for test runs"
         required: true
+      release_tag:
+        description: "Existing release tag to attach the artifacts to (e.g. v0.10.0). Leave empty for artifacts-only test runs."
+        required: false
+        default: ""
 
 permissions:
   contents: write   # required to attach assets to the release
@@ -145,6 +149,21 @@ jobs:
           mkdir -p dist-artifacts
           tar -czf "dist-artifacts/raggity-$ver-macos-arm64.tar.gz" -C dist/rag .
 
+      # ---- checksums ---------------------------------------------------------
+      - name: Write SHA256 checksums
+        shell: bash
+        run: |
+          cd dist-artifacts
+          for f in *; do
+            case "$f" in *.sha256) continue;; esac
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$f" > "$f.sha256"
+            else
+              shasum -a 256 "$f" > "$f.sha256"
+            fi
+          done
+          cat *.sha256
+
       # ---- upload -----------------------------------------------------------
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
@@ -154,8 +173,10 @@ jobs:
           if-no-files-found: error
 
       - name: Attach to GitHub Release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" dist-artifacts/* --clobber
+        run: |
+          tag="${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}"
+          gh release upload "$tag" dist-artifacts/* --clobber
