@@ -24,6 +24,12 @@ class VectorStore(ABC):
     def upsert(self, chunks: list[Chunk], embedder) -> None: ...
     @abstractmethod
     def delete_source(self, source_path: str) -> None: ...
+    def delete_sources(self, source_paths: list[str]) -> None:
+        """Delete multiple sources. Default: loop over delete_source (back-compat
+        for third-party VectorStore implementations); stores with a native
+        batch-delete path should override for a single round-trip."""
+        for p in source_paths:
+            self.delete_source(p)
     @abstractmethod
     def vector_search(self, query_vec: list[float], limit: int) -> list[Chunk]: ...
     @abstractmethod
@@ -71,6 +77,7 @@ def _row_to_chunk(row: dict, score: float = 0.0) -> Chunk:
         score=score,
         parent_id=row.get("parent_id", "") or "",
         parent_text=row.get("parent_text", "") or "",
+        vector=row.get("vector"),
     )
 
 
@@ -133,6 +140,15 @@ class LanceDBStore(VectorStore):
     def delete_source(self, source_path: str) -> None:
         safe = source_path.replace("'", "''")
         self._tbl.delete(f"source_path = '{safe}'")
+        self._fts_ready = False
+
+    def delete_sources(self, source_paths: list[str]) -> None:
+        if not source_paths:
+            return
+        escaped = ", ".join(
+            f"'{p.replace(chr(39), chr(39) + chr(39))}'" for p in source_paths
+        )
+        self._tbl.delete(f"source_path IN ({escaped})")
         self._fts_ready = False
 
     def vector_search(self, query_vec: list[float], limit: int) -> list[Chunk]:

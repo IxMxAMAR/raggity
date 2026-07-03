@@ -152,3 +152,48 @@ def test_reset_uses_list_table_names(tmp_path, emb):
     s.upsert([_chunk("c1", "alpha")], emb)
     s.reset()
     assert s.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# stored-vector reuse (dedup perf) + batched delete_sources
+# ---------------------------------------------------------------------------
+
+def test_vector_search_returns_vector(tmp_path, emb):
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    store.upsert([_chunk("c1", "backups run nightly to the NAS")], emb)
+    res = store.vector_search(emb.embed_query("backups"), limit=1)
+    assert res[0].vector is not None
+    assert len(res[0].vector) == emb.dim
+
+
+def test_text_search_returns_vector(tmp_path, emb):
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    store.upsert([_chunk("c1", "rotated the API key on 2026-06-01")], emb)
+    res = store.text_search("API key", limit=1)
+    assert res[0].vector is not None
+    assert len(res[0].vector) == emb.dim
+
+
+def test_get_by_chunk_ids_returns_vector(tmp_path, emb):
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    store.upsert([_chunk("c1", "alpha")], emb)
+    got = store.get_by_chunk_ids(["c1"])
+    assert got[0].vector is not None
+    assert len(got[0].vector) == emb.dim
+
+
+def test_delete_sources_removes_multiple(tmp_path, emb):
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    store.upsert([_chunk("c1", "alpha", src="a.md"),
+                  _chunk("c2", "beta", src="b.md", ordinal=1),
+                  _chunk("c3", "gamma", src="c.md", ordinal=2)], emb)
+    store.delete_sources(["a.md", "b.md"])
+    assert store.all_source_paths() == {"c.md"}
+    assert store.count() == 1
+
+
+def test_delete_sources_empty_list_is_noop(tmp_path, emb):
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    store.upsert([_chunk("c1", "alpha")], emb)
+    store.delete_sources([])
+    assert store.count() == 1

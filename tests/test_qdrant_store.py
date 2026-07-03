@@ -103,3 +103,48 @@ def test_local_memory_indexes_text_search_and_delete(emb):
     s.delete_source("b.md")
     assert s.all_source_paths() == {"a.md"}
     assert s.count() == 1
+
+
+# ---------------------------------------------------------------------------
+# stored-vector reuse (dedup perf) + batched delete_sources
+# ---------------------------------------------------------------------------
+
+def test_vector_search_returns_vector(emb):
+    s = _store(emb.dim)
+    s.upsert([_chunk("c1", "backups run nightly to the NAS")], emb)
+    res = s.vector_search(emb.embed_query("backups"), limit=1)
+    assert res[0].vector is not None
+    assert len(res[0].vector) == emb.dim
+
+
+def test_text_search_returns_vector(emb):
+    s = _store(emb.dim)
+    s.upsert([_chunk("c1", "rotated the API key on 2026")], emb)
+    res = s.text_search("API key", limit=1)
+    assert res[0].vector is not None
+    assert len(res[0].vector) == emb.dim
+
+
+def test_get_by_chunk_ids_returns_vector(emb):
+    s = _store(emb.dim)
+    s.upsert([_chunk("c1", "alpha")], emb)
+    got = s.get_by_chunk_ids(["c1"])
+    assert got[0].vector is not None
+    assert len(got[0].vector) == emb.dim
+
+
+def test_delete_sources_removes_multiple(emb):
+    s = _store(emb.dim)
+    s.upsert([_chunk("c1", "alpha", src="a.md"),
+              _chunk("c2", "beta", src="b.md", ordinal=1),
+              _chunk("c3", "gamma", src="c.md", ordinal=2)], emb)
+    s.delete_sources(["a.md", "b.md"])
+    assert s.all_source_paths() == {"c.md"}
+    assert s.count() == 1
+
+
+def test_delete_sources_empty_list_is_noop(emb):
+    s = _store(emb.dim)
+    s.upsert([_chunk("c1", "alpha")], emb)
+    s.delete_sources([])
+    assert s.count() == 1

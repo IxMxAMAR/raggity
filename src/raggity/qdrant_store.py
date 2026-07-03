@@ -73,7 +73,8 @@ class QdrantStore(VectorStore):
                      ordinal=int(payload["ordinal"]), chunk_id=payload["chunk_id"],
                      score=score,
                      parent_id=payload.get("parent_id", "") or "",
-                     parent_text=payload.get("parent_text", "") or "")
+                     parent_text=payload.get("parent_text", "") or "",
+                     vector=getattr(p, "vector", None))
 
     def upsert(self, chunks: list[Chunk], embedder) -> None:
         if not chunks:
@@ -89,9 +90,18 @@ class QdrantStore(VectorStore):
             filter=m.Filter(must=[m.FieldCondition(key="source_path",
                                                    match=m.MatchValue(value=source_path))])))
 
+    def delete_sources(self, source_paths: list[str]) -> None:
+        if not source_paths:
+            return
+        m = self._m
+        self._client.delete(self._collection, points_selector=m.FilterSelector(
+            filter=m.Filter(must=[m.FieldCondition(key="source_path",
+                                                   match=m.MatchAny(any=source_paths))])))
+
     def vector_search(self, query_vec: list[float], limit: int) -> list[Chunk]:
         res = self._client.query_points(self._collection, query=query_vec,
-                                        limit=limit, with_payload=True).points
+                                        limit=limit, with_payload=True,
+                                        with_vectors=True).points
         return [self._to_chunk(p, float(p.score)) for p in res]
 
     def text_search(self, query: str, limit: int) -> list[Chunk]:
@@ -101,7 +111,7 @@ class QdrantStore(VectorStore):
                 self._collection,
                 scroll_filter=m.Filter(must=[m.FieldCondition(
                     key="text", match=m.MatchText(text=query))]),
-                limit=limit, with_payload=True)
+                limit=limit, with_payload=True, with_vectors=True)
         except Exception:
             return []
         return [self._to_chunk(p, 1.0 / (rank + 1)) for rank, p in enumerate(res)]
@@ -153,7 +163,7 @@ class QdrantStore(VectorStore):
         point_ids = [self._pid(cid) for cid in ids]
         try:
             results = self._client.retrieve(
-                self._collection, ids=point_ids, with_payload=True
+                self._collection, ids=point_ids, with_payload=True, with_vectors=True
             )
             return [self._to_chunk(p, 0.0) for p in results]
         except Exception:
@@ -170,6 +180,7 @@ class QdrantStore(VectorStore):
                     ]),
                     limit=len(ids) + 1,
                     with_payload=True,
+                    with_vectors=True,
                     offset=offset,
                 )
                 for p in res:

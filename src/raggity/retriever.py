@@ -19,7 +19,17 @@ def _cosine(a: list[float], b: list[float]) -> float:
 def dedup_chunks(chunks: list[Chunk], embedder, threshold: float) -> list[Chunk]:
     if not chunks:
         return []
-    vectors = embedder.embed_documents([c.text for c in chunks])
+    # Reuse vectors already returned by the store (vector_search/text_search/
+    # get_by_chunk_ids) — only embed chunks that arrived without one (e.g. after
+    # expand_to_parents swapped in different text). Index-aligned batch embed.
+    missing_idx = [i for i, c in enumerate(chunks) if c.vector is None]
+    if missing_idx:
+        fresh = embedder.embed_documents([chunks[i].text for i in missing_idx])
+        fresh_by_idx = dict(zip(missing_idx, fresh))
+    else:
+        fresh_by_idx = {}
+    vectors = [c.vector if c.vector is not None else fresh_by_idx[i]
+               for i, c in enumerate(chunks)]
     kept: list[Chunk] = []
     kept_vecs: list[list[float]] = []
     for c, v in zip(chunks, vectors):
@@ -50,7 +60,7 @@ def expand_to_parents(chunks: list[Chunk]) -> list[Chunk]:
         if cur is None or c.score > cur.score:
             best_by_parent[c.parent_id] = c
     for c in best_by_parent.values():
-        out.append(replace(c, text=c.parent_text))
+        out.append(replace(c, text=c.parent_text, vector=None))
     return out
 
 

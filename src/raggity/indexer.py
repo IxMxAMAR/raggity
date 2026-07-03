@@ -78,6 +78,7 @@ class Indexer:
             )
         report.skipped_generic += skipped_generic
         seen: dict[str, str] = {}
+        to_delete: set[str] = set()
 
         all_chunks: list = []
         for doc in docs:
@@ -86,19 +87,24 @@ class Indexer:
             if prev == doc.file_hash:
                 report.unchanged += 1
                 continue
-            # changed or new → delete existing chunks for this source
-            self.store.delete_source(doc.path)
+            # changed or new → existing chunks for this source (if any) are removed
+            # below in the single batched delete_sources call before the upsert.
+            to_delete.add(doc.path)
             all_chunks.extend(chunk_document(doc, **(self.chunk_kwargs or {})))
             if prev is None:
                 report.added += 1
             else:
                 report.updated += 1
 
-        # delete sources that vanished from disk
+        # sources that vanished from disk
         for old_path in list(manifest.keys()):
             if old_path not in seen:
-                self.store.delete_source(old_path)
+                to_delete.add(old_path)
                 report.deleted += 1
+
+        # single batched delete across all changed + vanished sources
+        if to_delete:
+            self.store.delete_sources(list(to_delete))
 
         # single batched upsert across all changed files
         if all_chunks:

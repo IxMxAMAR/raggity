@@ -61,6 +61,51 @@ def test_dedup_removes_near_duplicates():
     assert "a" in ids and "c" in ids and "b" not in ids  # b duped against a
 
 
+class SpyEmbedder(FakeEmbedder):
+    """Records embed_documents calls so tests can assert exactly what was embedded."""
+    def __init__(self):
+        self.calls: list[list[str]] = []
+
+    def embed_documents(self, texts):
+        self.calls.append(list(texts))
+        return super().embed_documents(texts)
+
+
+def _chunk_vec(cid, text, vector, score=0.0):
+    return Chunk(text=text, source_path="a.md", title="A", heading_path="A",
+                 ordinal=0, chunk_id=cid, score=score, vector=vector)
+
+
+def test_dedup_with_all_stored_vectors_never_calls_embed_documents():
+    """When every chunk already carries a stored vector, dedup must reuse it and
+    never call embed_documents (the ~2.8s/query cost being removed)."""
+    spy = SpyEmbedder()
+    chunks = [
+        _chunk_vec("a", "dup text one", [1.0, 0.0, 0.0], 0.9),
+        _chunk_vec("b", "dup text two", [1.0, 0.0, 0.0], 0.8),
+        _chunk_vec("c", "different", [0.0, 1.0, 0.0], 0.7),
+    ]
+    kept = dedup_chunks(chunks, spy, threshold=0.92)
+    ids = {c.chunk_id for c in kept}
+    assert ids == {"a", "c"}  # b duped against a — identical to the embedding path
+    assert spy.calls == []
+
+
+def test_dedup_embeds_only_chunks_missing_vector():
+    """Mixed set: exactly one embed_documents call, containing exactly the missing
+    chunk's text, with index alignment preserved."""
+    spy = SpyEmbedder()
+    chunks = [
+        _chunk_vec("a", "dup text one", [1.0, 0.0, 0.0], 0.9),
+        _chunk("b", "dup text two", 0.8),  # vector=None (default) — not embedded yet
+        _chunk_vec("c", "different", [0.0, 1.0, 0.0], 0.7),
+    ]
+    kept = dedup_chunks(chunks, spy, threshold=0.92)
+    assert spy.calls == [["dup text two"]]
+    ids = {c.chunk_id for c in kept}
+    assert ids == {"a", "c"}  # b's freshly-embedded vector dupes against a's stored one
+
+
 def test_order_lost_in_middle_puts_best_at_ends():
     chunks = [_chunk("a", "x", 0.9), _chunk("b", "x", 0.7), _chunk("c", "x", 0.5)]
     ordered = order_lost_in_middle(chunks)
@@ -113,6 +158,16 @@ def test_expand_to_parents_dedups_and_swaps_text():
     assert texts == {"PARENT ONE FULL", "PARENT TWO FULL"}
     p1 = next(c for c in out if c.parent_id == "p1")
     assert p1.score == 0.9                      # best child's score kept
+
+
+def test_expand_to_parents_nulls_vector():
+    """Parent text no longer matches the child's stored vector — must be cleared
+    so downstream dedup re-embeds the (now different) parent text."""
+    c1 = _chunk_vec("c1", "child one", [1.0, 0.0, 0.0], score=0.9)
+    c1.parent_id = "p1"; c1.parent_text = "PARENT ONE FULL"
+    out = expand_to_parents([c1])
+    assert len(out) == 1
+    assert out[0].vector is None
 
 
 def test_retrieve_multi_fuses_multiple_queries():

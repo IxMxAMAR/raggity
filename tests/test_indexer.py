@@ -99,6 +99,46 @@ def test_indexer_calls_ensure_ann(tmp_path, emb, monkeypatch):
     assert seen["t"] == 42
 
 
+def test_indexer_issues_one_batched_delete_sources_call(tmp_path, emb, monkeypatch):
+    """Changed + vanished paths must go through ONE delete_sources call, not N
+    delete_source calls (the batched-delete perf win)."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    a, b, c = notes / "a.md", notes / "b.md", notes / "c.md"
+    _write(a, "# A\n\nalpha")
+    _write(b, "# B\n\nbeta")
+    _write(c, "# C\n\ngamma")
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    indexer = Indexer(emb, store, manifest_path=str(tmp_path / "m.json"))
+    indexer.ingest([str(notes / "*.md")])
+
+    _write(a, "# A\n\nalpha v2 changed")  # changed
+    b.unlink()                            # vanished
+
+    delete_sources_calls = []
+    delete_source_calls = []
+    real_delete_sources = store.delete_sources
+    real_delete_source = store.delete_source
+
+    def spy_delete_sources(paths):
+        delete_sources_calls.append(list(paths))
+        return real_delete_sources(paths)
+
+    def spy_delete_source(path):
+        delete_source_calls.append(path)
+        return real_delete_source(path)
+
+    monkeypatch.setattr(store, "delete_sources", spy_delete_sources)
+    monkeypatch.setattr(store, "delete_source", spy_delete_source)
+
+    r = indexer.ingest([str(notes / "*.md")])
+
+    assert delete_source_calls == []            # no per-path calls
+    assert len(delete_sources_calls) == 1        # exactly one batched call
+    assert set(delete_sources_calls[0]) == {a.as_posix(), b.as_posix()}
+    assert r.updated == 1 and r.deleted == 1
+    assert all("b.md" not in sp for sp in store.all_source_paths())
+
+
 def test_ingest_report_carries_skipped_needs_extra(tmp_path, emb, monkeypatch):
     """When a reader raises MissingDependencyError, IngestReport records it."""
     import raggity.readers as r

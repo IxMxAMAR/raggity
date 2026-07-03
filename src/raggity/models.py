@@ -21,6 +21,7 @@ class Chunk:
     score: float = 0.0
     parent_id: str = ""
     parent_text: str = ""
+    vector: list[float] | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
