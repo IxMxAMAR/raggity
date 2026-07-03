@@ -156,7 +156,9 @@ class Raggity:
                           ann_threshold=self.cfg.index.ann_threshold)
         report = indexer.ingest(self.cfg.sources.include)
 
-        # Also ingest any configured URLs (depth=0 each; scope = the exact URL)
+        # Also ingest any configured URLs. depth=0 fetches exactly one page, so no
+        # in-scope page can have vanished -> scope=None (a raw-URL prefix scope
+        # could wrongly prune other URLs that merely share the string prefix).
         if self.cfg.sources.urls:
             from .connectors.web import WebConnector  # noqa: PLC0415
             for url in self.cfg.sources.urls:
@@ -165,7 +167,7 @@ class Raggity:
                 except Exception:
                     docs = []  # network errors during ingest are non-fatal
                 if docs:
-                    report.added += self.ingest_documents(docs, scope=url)
+                    report.added += self.ingest_documents(docs, scope=None)
 
         # Build graph after vector upsert when graph=true (LLM-cost-heavy, opt-in)
         if self.cfg.retrieval.graph:

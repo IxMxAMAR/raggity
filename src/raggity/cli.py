@@ -145,11 +145,15 @@ def ingest_url(
         console.print("[yellow]No content extracted.[/yellow]")
         raise typer.Exit(0)
     if depth == 0:
-        scope = url
+        # Single-page fetch: nothing in-scope can have vanished, and a raw-URL
+        # prefix scope could wrongly prune other URLs sharing the string prefix.
+        scope = None
     else:
         from urllib.parse import urlparse  # noqa: PLC0415
         pr = urlparse(url)
-        scope = f"{pr.scheme}://{pr.netloc}"
+        # Trailing slash terminates the prefix so https://x.com never matches
+        # https://x.company.com.
+        scope = f"{pr.scheme}://{pr.netloc}/"
     added = rag.ingest_documents(docs, scope=scope)
     console.print(f"[green]Ingested {added} page(s) from {url}.[/green]")
 
