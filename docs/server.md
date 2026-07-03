@@ -108,6 +108,8 @@ curl -N "http://localhost:8000/ask/stream?question=What+are+backups%3F&session_i
 SSE event format:
 
 ```
+:ok
+
 data: Hello
 
 data:  world
@@ -115,6 +117,8 @@ data:  world
 event: done
 data: {"citations": ["source.md"], "session_id": "abc123"}
 ```
+
+Both the stateless and the session (`session_id`) paths stream true incremental token deltas. The stream opens with a `:ok` comment and is sent with `Cache-Control: no-cache` and `X-Accel-Buffering: no`, so it passes through nginx-style reverse proxies without being buffered. Newlines inside a delta are framed as consecutive `data:` lines per the SSE spec.
 
 ### `DELETE /session/{id}`
 

@@ -132,6 +132,7 @@ graph_hops = 1
 | `expand_n` | `3` | Number of query variations for `--expand` |
 | `graph` | `false` | Enable GraphRAG knowledge-graph augmentation |
 | `graph_hops` | `1` | BFS hops from matched entities in the graph |
+| `graph_concurrency` | `8` | Concurrent LLM extraction calls during `rag graph-build` (lower it for strict-rate-limit backends) |
 
 ### Heavy reranker
 

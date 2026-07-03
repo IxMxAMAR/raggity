@@ -221,9 +221,15 @@ def test_graph_build_succeeds(tmp_path, monkeypatch):
     assert os.path.isfile(str(tmp_path / "idx" / "graph.json"))
 
 
-def test_version_is_0_8_0():
+def test_version_matches_pyproject():
+    import tomllib
+    from pathlib import Path
+
     import raggity
-    assert raggity.__version__ == "0.8.0"
+    pyproject = Path(__file__).parent.parent / "pyproject.toml"
+    with open(pyproject, "rb") as fh:
+        expected = tomllib.load(fh)["project"]["version"]
+    assert raggity.__version__ == expected
 
 
 def test_status_empty_kb_shows_hint(tmp_path):
