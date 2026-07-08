@@ -793,6 +793,264 @@ def test_sse_stream_error_no_traceback(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# RED: v0.11.0 T2 — GET /healthz (liveness) + POST /retrieve (retrieval-only)
+# ---------------------------------------------------------------------------
+
+def _external_dead_cfg(tmp_path, **server_kwargs):
+    """Config whose generation backend is external + unreachable (never started)."""
+    from raggity.config import (RaggityConfig, SourcesConfig, IndexConfig,
+                                GenerationConfig, ServerConfig)
+    return RaggityConfig(
+        sources=SourcesConfig(include=[]),
+        index=IndexConfig(path=str(tmp_path / "idx_ext")),
+        generation=GenerationConfig(backend="external",
+                                    base_url="http://127.0.0.1:9"),
+        server=ServerConfig(**server_kwargs) if server_kwargs else ServerConfig(),
+    )
+
+
+def _ingest_content(client, docs, headers=None):
+    payload = {"documents": [{"path": p, "text": t, "title": p} for p, t in docs]}
+    r = client.post("/ingest/content", json=payload, headers=headers or {})
+    assert r.status_code == 200, r.text
+    return r
+
+
+# --- GET /healthz -----------------------------------------------------------
+
+def test_healthz_exact_shape_fresh_index(tmp_path):
+    """/healthz returns exactly the 4 contractual keys; fresh index -> documents=0."""
+    import raggity
+    from raggity.server import create_app
+    app = create_app(_cfg(tmp_path))
+    with TestClient(app) as client:
+        r = client.get("/healthz")
+        assert r.status_code == 200
+        body = r.json()
+        assert set(body.keys()) == {"status", "version", "index_backend", "documents"}
+        assert body["status"] == "ok"
+        assert body["version"] == raggity.__version__
+        assert body["index_backend"] == "lancedb"
+        assert body["documents"] == 0
+
+
+def test_healthz_counts_chunks_after_ingest(tmp_path):
+    """documents reflects store.count() (chunk count) after ingest."""
+    from raggity.server import create_app
+    app = create_app(_cfg(tmp_path))
+    with TestClient(app) as client:
+        client.post("/ingest")
+        body = client.get("/healthz").json()
+        assert body["documents"] >= 1
+
+
+def test_healthz_leaves_heavy_slots_unset(tmp_path):
+    """/healthz must not build the embedder, reranker, or LLM provider."""
+    from raggity.server import create_app
+    from raggity.core import _UNSET
+    app = create_app(_cfg(tmp_path))
+    with TestClient(app) as client:
+        assert client.get("/healthz").status_code == 200
+        rag = app.state.raggity_state["rag"]
+        assert rag.__dict__["_raw_embedder"] is _UNSET
+        assert rag.__dict__["_reranker"] is _UNSET
+        assert rag.__dict__["_provider"] is _UNSET
+
+
+def test_healthz_works_with_dead_external_backend(tmp_path):
+    """/healthz is 200 even when the generation backend is unreachable."""
+    from raggity.server import create_app
+    app = create_app(_external_dead_cfg(tmp_path))
+    with TestClient(app) as client:
+        r = client.get("/healthz")
+        assert r.status_code == 200
+        assert r.json()["status"] == "ok"
+
+
+def test_healthz_unauthenticated_when_api_key_auth(tmp_path):
+    """auth=api_key: /healthz is open (liveness probe) while data routes stay 401."""
+    from raggity.server import create_app
+    cfg = _auth_cfg(tmp_path, auth="api_key", api_keys=["secret123"])
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        assert client.get("/healthz").status_code == 200
+        assert client.get("/status").status_code == 401  # regression: still gated
+
+
+# --- POST /retrieve ---------------------------------------------------------
+
+def test_retrieve_exact_shape(tmp_path):
+    """/retrieve returns the contractual shape with per-chunk metadata."""
+    from raggity.server import create_app
+    app = create_app(_external_dead_cfg(tmp_path))
+    with TestClient(app) as client:
+        _ingest_content(client, [("/a.md", "backups run nightly to the NAS")])
+        r = client.post("/retrieve", json={"query": "how are backups done?"})
+        assert r.status_code == 200
+        body = r.json()
+        assert set(body.keys()) == {"chunks", "packed_context", "token_count", "tokenizer"}
+        assert body["tokenizer"] == "chars/4-approx"
+        assert len(body["chunks"]) >= 1
+        for c in body["chunks"]:
+            assert set(c.keys()) == {"text", "score", "source", "metadata"}
+            assert isinstance(c["score"], float)
+            assert set(c["metadata"].keys()) == {"title", "heading_path", "chunk_id", "ordinal"}
+        assert body["packed_context"].startswith("[source: ")
+        assert "NAS" in body["packed_context"]
+        assert body["token_count"] >= 1
+
+
+def test_retrieve_k_override_honored(tmp_path):
+    """k=2 returns at most 2 chunks even when more are indexed."""
+    from raggity.server import create_app
+    app = create_app(_external_dead_cfg(tmp_path))
+    with TestClient(app) as client:
+        _ingest_content(client, [
+            ("/a.md", "the aurora borealis appears near the poles"),
+            ("/b.md", "sourdough bread needs a fermented starter"),
+            ("/c.md", "gearboxes convert torque in wind turbines"),
+            ("/d.md", "octopuses have three hearts and blue blood"),
+        ])
+        r = client.post("/retrieve", json={"query": "bread", "k": 2})
+        assert r.status_code == 200
+        assert 1 <= len(r.json()["chunks"]) <= 2
+
+
+def test_retrieve_k_exceeding_candidates(tmp_path):
+    """k larger than retrieval.candidates still returns k chunks."""
+    from raggity.server import create_app
+    from raggity.config import RetrievalConfig
+    cfg = _external_dead_cfg(tmp_path)
+    cfg.retrieval = RetrievalConfig(candidates=1, dedup_cosine=1.01)
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        _ingest_content(client, [
+            ("/a.md", "the aurora borealis appears near the poles"),
+            ("/b.md", "sourdough bread needs a fermented starter"),
+            ("/c.md", "gearboxes convert torque in wind turbines"),
+        ])
+        r = client.post("/retrieve", json={"query": "anything at all", "k": 3})
+        assert r.status_code == 200
+        assert len(r.json()["chunks"]) == 3
+
+
+def test_retrieve_budget_respected(tmp_path):
+    """max_context_tokens caps token_count; at least the first chunk is packed."""
+    from raggity.server import create_app
+    app = create_app(_external_dead_cfg(tmp_path))
+    with TestClient(app) as client:
+        _ingest_content(client, [
+            ("/a.md", "alpha " * 50),
+            ("/b.md", "bravo " * 50),
+            ("/c.md", "charlie " * 50),
+        ])
+        r = client.post("/retrieve",
+                        json={"query": "alpha bravo", "k": 3, "max_context_tokens": 90})
+        assert r.status_code == 200
+        body = r.json()
+        assert len(body["chunks"]) >= 2          # chunk list is NOT budget-truncated
+        assert body["packed_context"] != ""      # at least first chunk present
+        assert 1 <= body["token_count"] <= 90
+
+
+def test_retrieve_tiny_budget_truncates_first_chunk(tmp_path):
+    """Budget smaller than the first block: block is char-truncated, never empty."""
+    from raggity.server import create_app
+    app = create_app(_external_dead_cfg(tmp_path))
+    with TestClient(app) as client:
+        _ingest_content(client, [("/a.md", "verbose " * 100)])
+        r = client.post("/retrieve",
+                        json={"query": "verbose", "k": 1, "max_context_tokens": 5})
+        body = r.json()
+        assert body["packed_context"] != ""
+        assert len(body["packed_context"]) <= 5 * 4
+        assert body["token_count"] <= 5
+
+
+def test_retrieve_null_budget_packs_all(tmp_path):
+    """max_context_tokens omitted: every returned chunk appears in packed_context."""
+    from raggity.server import create_app
+    app = create_app(_external_dead_cfg(tmp_path))
+    with TestClient(app) as client:
+        _ingest_content(client, [
+            ("/a.md", "the aurora borealis appears near the poles"),
+            ("/b.md", "sourdough bread needs a fermented starter"),
+        ])
+        r = client.post("/retrieve", json={"query": "aurora bread", "k": 4})
+        body = r.json()
+        assert len(body["chunks"]) >= 2
+        assert body["packed_context"].count("[source: ") == len(body["chunks"])
+
+
+def test_retrieve_empty_index(tmp_path):
+    """Empty store: empty contractual shape, token_count 0."""
+    from raggity.server import create_app
+    app = create_app(_external_dead_cfg(tmp_path))
+    with TestClient(app) as client:
+        r = client.post("/retrieve", json={"query": "anything"})
+        assert r.status_code == 200
+        assert r.json() == {"chunks": [], "packed_context": "",
+                            "token_count": 0, "tokenizer": "chars/4-approx"}
+
+
+def test_retrieve_k_validation(tmp_path):
+    """k < 1 is rejected with 422 by pydantic validation."""
+    from raggity.server import create_app
+    app = create_app(_external_dead_cfg(tmp_path))
+    with TestClient(app) as client:
+        assert client.post("/retrieve", json={"query": "q", "k": 0}).status_code == 422
+        assert client.post("/retrieve", json={"query": "q", "k": -3}).status_code == 422
+
+
+def test_retrieve_requires_auth(tmp_path):
+    """auth=api_key: /retrieve without a key is 401; with a key it works."""
+    from raggity.server import create_app
+    cfg = _auth_cfg(tmp_path, auth="api_key", api_keys=["secret123"])
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        assert client.post("/retrieve", json={"query": "q"}).status_code == 401
+        r = client.post("/retrieve", json={"query": "q"},
+                        headers={"X-API-Key": "secret123"})
+        assert r.status_code == 200
+
+
+def test_retrieve_per_tenant_isolation(tmp_path):
+    """per_user=True: bob's /retrieve never sees alice's documents."""
+    from raggity.server import create_app
+    cfg = _per_user_cfg(tmp_path, per_user=True)
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        _ingest_content(client,
+                        [("/alice.md", "Alice exclusive: the sky is green.")],
+                        headers={"X-API-Key": "key_alice"})
+        # Alice retrieves her own doc
+        ra = client.post("/retrieve", json={"query": "sky colour"},
+                         headers={"X-API-Key": "key_alice"})
+        assert ra.status_code == 200
+        assert any("green" in c["text"] for c in ra.json()["chunks"])
+        # Bob's index is empty — he must not see alice's content
+        rb = client.post("/retrieve", json={"query": "sky colour"},
+                         headers={"X-API-Key": "key_bob"})
+        assert rb.status_code == 200
+        assert rb.json()["chunks"] == []
+
+
+def test_retrieve_never_builds_provider(tmp_path):
+    """End-to-end with dead external backend: /retrieve works, provider stays unbuilt."""
+    from raggity.server import create_app
+    from raggity.core import _UNSET
+    app = create_app(_external_dead_cfg(tmp_path))
+    with TestClient(app) as client:
+        _ingest_content(client, [("/a.md", "backups run nightly to the NAS")])
+        r = client.post("/retrieve", json={"query": "how are backups done?"})
+        assert r.status_code == 200
+        assert len(r.json()["chunks"]) >= 1
+        rag = app.state.raggity_state["rag"]
+        assert rag.__dict__["_provider"] is _UNSET
+        assert rag.__dict__["_answerer"] is _UNSET
+
+
+# ---------------------------------------------------------------------------
 # Per-tenant persona (v0.10.0): server.personas[key] reaches the tenant answerer
 # ---------------------------------------------------------------------------
 

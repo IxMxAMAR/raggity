@@ -10,14 +10,16 @@ from typing import AsyncIterator
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 _WEB_DIR = Path(__file__).parent / "web"
 
+from . import __version__
+from .chunker import estimate_tokens
 from .config import RaggityConfig
 from .conversation import Conversation
 from .core import Raggity
-from .models import Document
+from .models import Chunk, Document
 
 
 class AskRequest(BaseModel):
@@ -39,6 +41,36 @@ class IngestDocument(BaseModel):
 
 class IngestContentRequest(BaseModel):
     documents: list[IngestDocument]
+
+
+class RetrieveRequest(BaseModel):
+    query: str
+    k: int = Field(default=8, ge=1)
+    max_context_tokens: int | None = Field(default=None, ge=1)
+
+
+def _pack_context(chunks: list[Chunk],
+                  max_context_tokens: int | None) -> tuple[str, int]:
+    """Greedily pack *chunks* (in retriever order) into a single context string.
+
+    Each block is ``[source: {source_path}]\\n{text}``, joined by blank lines.
+    With a budget, packing stops before the first block whose addition would push
+    :func:`estimate_tokens` past *max_context_tokens*; if even the FIRST block
+    does not fit it is char-truncated to ``budget * 4`` so the packed context is
+    never empty while chunks exist.  Returns ``(packed, token_count)``.
+    """
+    if not chunks:
+        return "", 0
+    packed = ""
+    for i, c in enumerate(chunks):
+        block = f"[source: {c.source_path}]\n{c.text}"
+        candidate = block if not packed else f"{packed}\n\n{block}"
+        if max_context_tokens is not None and estimate_tokens(candidate) > max_context_tokens:
+            if i == 0:
+                packed = block[: max_context_tokens * 4]
+            break
+        packed = candidate
+    return packed, estimate_tokens(packed)
 
 
 def _sse_data(text: str) -> str:
@@ -203,6 +235,46 @@ def create_app(cfg: RaggityConfig) -> FastAPI:
     async def status(identity: str | None = Depends(require_auth)):
         rag: Raggity = await _resolve_rag(identity)
         return await asyncio.to_thread(rag.status)
+
+    @app.get("/healthz")
+    async def healthz():
+        # Liveness probe: UNAUTHENTICATED (like GET /) and deliberately cheap —
+        # touches only the vector store (lazy Raggity never builds the embedder,
+        # reranker, or LLM provider for a count), so it works even when the
+        # generation backend is completely unreachable.  "documents" is the
+        # CHUNK count (store.count()).
+        rag: Raggity = state["rag"]
+        documents = await asyncio.to_thread(lambda: rag.store.count())
+        return {
+            "status": "ok",
+            "version": __version__,
+            "index_backend": cfg.index.backend,
+            "documents": documents,
+        }
+
+    @app.post("/retrieve")
+    async def retrieve(req: RetrieveRequest,
+                       identity: str | None = Depends(require_auth)):
+        # Retrieval ONLY: no LLM, no query transforms, no graph extraction — the
+        # provider is never constructed.  The sufficiency-floor abstention is
+        # bypassed (raw retrieval: external orchestrators get the top-k with
+        # scores and decide relevance themselves).
+        rag: Raggity = await _resolve_rag(identity)
+        chunks = await asyncio.to_thread(
+            lambda: rag.retriever.retrieve(
+                req.query, top_k=req.k, apply_sufficiency=False))
+        packed_context, token_count = _pack_context(chunks, req.max_context_tokens)
+        return {
+            "chunks": [
+                {"text": c.text, "score": c.score, "source": c.source_path,
+                 "metadata": {"title": c.title, "heading_path": c.heading_path,
+                              "chunk_id": c.chunk_id, "ordinal": c.ordinal}}
+                for c in chunks
+            ],
+            "packed_context": packed_context,
+            "token_count": token_count,
+            "tokenizer": "chars/4-approx",
+        }
 
     @app.post("/ask")
     async def ask(req: AskRequest, identity: str | None = Depends(require_auth)):

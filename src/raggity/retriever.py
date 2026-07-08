@@ -71,18 +71,29 @@ class Retriever:
         self.reranker = reranker
         self.cfg = cfg
 
-    def retrieve(self, query: str) -> list[Chunk]:
-        return self.retrieve_multi([query], query)
+    def retrieve(self, query: str, *, top_k: int | None = None,
+                 apply_sufficiency: bool = True) -> list[Chunk]:
+        return self.retrieve_multi([query], query, top_k=top_k,
+                                   apply_sufficiency=apply_sufficiency)
 
     def retrieve_multi(self, queries: list[str], rerank_query: str,
-                       graph_chunk_ids: list[str] | None = None) -> list[Chunk]:
+                       graph_chunk_ids: list[str] | None = None, *,
+                       top_k: int | None = None,
+                       apply_sufficiency: bool = True) -> list[Chunk]:
         """Gather candidates across all queries, fuse via RRF, rerank, then return top-k.
 
         Abstention is keyed on the DENSE cosine similarity (reliable: relevant ~0.6–0.8,
         off-topic ~0.43–0.47).  The cross-encoder (reranker) is used only for ORDERING;
         its absolute score does NOT govern abstention.
+
+        *top_k* overrides ``cfg.top_k`` for this call only (shared config is never
+        mutated); the candidate fetch size is widened to ``max(candidates, top_k)``
+        so a caller-requested k larger than ``cfg.candidates`` still works.
+        *apply_sufficiency=False* bypasses the sufficiency-floor abstention (raw
+        retrieval for external orchestrators that want top-k with scores).
         """
-        n = self.cfg.candidates
+        k = self.cfg.top_k if top_k is None else top_k
+        n = max(self.cfg.candidates, k)
         per_query_dense_ids: list[list[str]] = []
         per_query_sparse_ids: list[list[str]] = []
         by_id: dict[str, Chunk] = {}
@@ -134,7 +145,9 @@ class Retriever:
 
         # ABSTAIN: dense cosine is the reliable relevance signal.
         # If max_dense < sufficiency_floor, the top retrieved doc is not relevant enough.
-        if not candidates or max_dense < self.cfg.sufficiency_floor:
+        if not candidates:
+            return []
+        if apply_sufficiency and max_dense < self.cfg.sufficiency_floor:
             return []
 
         # Graph-augmented retrieval: merge neighborhood chunks before rerank (opt-in).
@@ -154,7 +167,7 @@ class Retriever:
                 candidates = [c for c in candidates if c.score >= self.cfg.relevance_floor]
 
         survivors = dedup_chunks(candidates, self.embedder, self.cfg.dedup_cosine)
-        top = survivors[: self.cfg.top_k]
+        top = survivors[: k]
         # Expand to parents BEFORE ordering so score-based ordering (lost-in-middle)
         # acts on the final collapsed set, not on the pre-expansion child list.
         if getattr(self.cfg, "parent_document", False):

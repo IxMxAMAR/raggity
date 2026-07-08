@@ -408,6 +408,64 @@ def test_hybrid_no_rerank_order_by_rrf_score():
     )
 
 
+# ---------------------------------------------------------------------------
+# RED: v0.11.0 T2 — top_k override + sufficiency bypass (server /retrieve)
+# ---------------------------------------------------------------------------
+
+def _five_chunks():
+    return [_chunk(f"c{i}", f"distinct text number {i}", score=0.7 - i * 0.01)
+            for i in range(5)]
+
+
+def test_retrieve_top_k_override_limits_results():
+    """retrieve(top_k=2) returns at most 2 chunks and does NOT mutate cfg.top_k."""
+    chunks = _five_chunks()
+    cfg = RetrievalConfig(candidates=10, top_k=5, rerank=False, hybrid=False,
+                          sufficiency_floor=0.5, dedup_cosine=1.01)
+    r = Retriever(FakeEmbedder(), FakeStore(chunks, []), None, cfg)
+    out = r.retrieve("q", top_k=2)
+    assert len(out) == 2
+    assert cfg.top_k == 5  # shared config untouched
+
+
+def test_retrieve_top_k_default_uses_cfg():
+    """retrieve() without top_k slices at cfg.top_k as before."""
+    chunks = _five_chunks()
+    cfg = RetrievalConfig(candidates=10, top_k=3, rerank=False, hybrid=False,
+                          sufficiency_floor=0.5, dedup_cosine=1.01)
+    r = Retriever(FakeEmbedder(), FakeStore(chunks, []), None, cfg)
+    assert len(r.retrieve("q")) == 3
+
+
+def test_retrieve_top_k_exceeding_candidates_widens_fetch():
+    """top_k > cfg.candidates: fetch size becomes max(candidates, top_k) so k wins."""
+    chunks = _five_chunks()
+    cfg = RetrievalConfig(candidates=2, top_k=1, rerank=False, hybrid=False,
+                          sufficiency_floor=0.5, dedup_cosine=1.01)
+    r = Retriever(FakeEmbedder(), FakeStore(chunks, []), None, cfg)
+    out = r.retrieve("q", top_k=4)
+    assert len(out) == 4
+
+
+def test_retrieve_apply_sufficiency_false_bypasses_floor():
+    """apply_sufficiency=False returns candidates even below sufficiency_floor."""
+    low = [_chunk("c1", "off topic", score=0.43)]
+    cfg = RetrievalConfig(candidates=10, top_k=3, rerank=False, hybrid=False,
+                          sufficiency_floor=0.5, dedup_cosine=1.01)
+    r = Retriever(FakeEmbedder(), FakeStore(low, []), None, cfg)
+    assert r.retrieve("q") == []                       # default still abstains
+    out = r.retrieve("q", apply_sufficiency=False)     # bypass returns the chunk
+    assert [c.chunk_id for c in out] == ["c1"]
+
+
+def test_retrieve_apply_sufficiency_false_empty_store_still_empty():
+    """Bypassing the floor never invents results: empty store -> []."""
+    cfg = RetrievalConfig(candidates=10, top_k=3, rerank=False, hybrid=False,
+                          dedup_cosine=1.01)
+    r = Retriever(FakeEmbedder(), FakeStore([], []), None, cfg)
+    assert r.retrieve("q", apply_sufficiency=False) == []
+
+
 def test_high_dense_low_rerank_still_returns_results():
     """Regression guard: cross-encoder absolute score of 0.0 must NOT cause abstention.
 
