@@ -6,6 +6,8 @@ from pathlib import Path
 import platformdirs
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+VALID_RERANK_BACKENDS: tuple[str, ...] = ("cross-encoder", "colbert")
+
 
 class SourcesConfig(BaseModel):
     include: list[str] = Field(default_factory=list)
@@ -32,7 +34,11 @@ class RetrievalConfig(BaseModel):
     rrf_k: int = 60
     candidates: int = 30
     rerank: bool = True
+    # "cross-encoder" (default, uses `rerank_model`) | "colbert" (late-interaction
+    # MaxSim scoring via fastembed's LateInteractionTextEmbedding, uses `colbert_model`).
+    rerank_backend: str = "cross-encoder"
     rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    colbert_model: str = "answerdotai/answerai-colbert-small-v1"
     top_k: int = 5
     dedup_cosine: float = 0.92
     # Dense-cosine sufficiency floor: governs abstention. Reliable signal (~0.6–0.8
@@ -52,6 +58,14 @@ class RetrievalConfig(BaseModel):
     graph: bool = False
     graph_hops: int = 1
     graph_concurrency: int = 8
+
+    @field_validator("rerank_backend")
+    @classmethod
+    def _validate_rerank_backend(cls, v: str) -> str:
+        if v not in VALID_RERANK_BACKENDS:
+            choices = ", ".join(f'"{b}"' for b in VALID_RERANK_BACKENDS)
+            raise ValueError(f"invalid rerank_backend {v!r}; valid choices: {choices}")
+        return v
 
 
 class GenerationConfig(BaseModel):

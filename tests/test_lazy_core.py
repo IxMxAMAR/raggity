@@ -185,3 +185,44 @@ def test_low_ram_profile_reranker_is_none_and_never_built(tmp_path):
     st = rag.status()
     assert st["chunks"] == 0
     assert rag._raw_embedder is _UNSET, "status must not build the embedder"
+
+
+# --- retrieval.rerank_backend = "colbert" wiring (T5) --------------------
+#
+# ColbertReranker only touches fastembed's LateInteractionTextEmbedding lazily
+# inside rerank() (never in __init__), so these wiring tests never trigger a
+# real model download — just building `rag.reranker` / `rag.retriever` is safe.
+
+def test_rerank_backend_colbert_builds_colbert_reranker(tmp_path):
+    from raggity.reranker import ColbertReranker
+
+    cfg = RaggityConfig(index=IndexConfig(path=str(tmp_path / "idx")))
+    cfg.retrieval.rerank_backend = "colbert"
+    rag = Raggity(cfg)
+    assert isinstance(rag.reranker, ColbertReranker)
+    assert rag.reranker._model_name == "answerdotai/answerai-colbert-small-v1"
+    assert rag.retriever.reranker is rag.reranker
+
+
+def test_rerank_backend_colbert_custom_model_name(tmp_path):
+    cfg = RaggityConfig(index=IndexConfig(path=str(tmp_path / "idx")))
+    cfg.retrieval.rerank_backend = "colbert"
+    cfg.retrieval.colbert_model = "some/other-colbert"
+    rag = Raggity(cfg)
+    assert rag.reranker._model_name == "some/other-colbert"
+
+
+def test_rerank_backend_colbert_tenant_shares_base_instance(tmp_path):
+    cfg = RaggityConfig(index=IndexConfig(path=str(tmp_path / "base")))
+    cfg.retrieval.rerank_backend = "colbert"
+    base = Raggity(cfg)
+    tenant = base.for_namespace("alice")
+    assert tenant.reranker is base.reranker
+
+
+def test_rerank_backend_colbert_rerank_false_still_none(tmp_path):
+    cfg = RaggityConfig(index=IndexConfig(path=str(tmp_path / "idx")))
+    cfg.retrieval.rerank_backend = "colbert"
+    cfg.retrieval.rerank = False
+    rag = Raggity(cfg)
+    assert rag.reranker is None

@@ -145,3 +145,51 @@ def test_profile_loaded_from_toml(tmp_path):
     cfg = load_config(str(p))
     assert cfg.profile == "low-ram"
     assert cfg.retrieval.rerank is False
+
+
+# ---------------------------------------------------------------------------
+# retrieval.rerank_backend (T5: ColBERT late-interaction reranker option)
+# ---------------------------------------------------------------------------
+
+def test_rerank_backend_defaults_to_cross_encoder():
+    from raggity.config import RetrievalConfig
+    r = RetrievalConfig()
+    assert r.rerank_backend == "cross-encoder"
+
+
+def test_rerank_backend_default_is_byte_identical_to_pre_existing_defaults():
+    """Adding rerank_backend/colbert_model must not perturb any other default."""
+    from raggity.config import RetrievalConfig
+    r = RetrievalConfig()
+    assert r.rerank is True
+    assert r.rerank_model == "Xenova/ms-marco-MiniLM-L-6-v2"
+
+
+def test_colbert_model_default():
+    from raggity.config import RetrievalConfig
+    r = RetrievalConfig()
+    assert r.colbert_model == "answerdotai/answerai-colbert-small-v1"
+
+
+def test_rerank_backend_colbert_accepted():
+    from raggity.config import RetrievalConfig
+    r = RetrievalConfig(rerank_backend="colbert")
+    assert r.rerank_backend == "colbert"
+
+
+def test_rerank_backend_invalid_raises_validation_error_naming_choices():
+    from raggity.config import RetrievalConfig
+    with pytest.raises(ValidationError) as excinfo:
+        RetrievalConfig(rerank_backend="bm25")
+    msg = str(excinfo.value)
+    assert "bm25" in msg
+    assert "cross-encoder" in msg
+    assert "colbert" in msg
+
+
+def test_rerank_backend_loaded_from_toml(tmp_path):
+    p = tmp_path / "raggity.toml"
+    p.write_text('[retrieval]\nrerank_backend = "colbert"\ncolbert_model = "some/other-colbert"\n')
+    cfg = load_config(str(p))
+    assert cfg.retrieval.rerank_backend == "colbert"
+    assert cfg.retrieval.colbert_model == "some/other-colbert"

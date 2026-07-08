@@ -143,7 +143,9 @@ model = "nomic-embed-text-v1.5-Q"
 candidates = 30
 top_k = 5
 rerank = true
+rerank_backend = "cross-encoder"
 rerank_model = "Xenova/ms-marco-MiniLM-L-6-v2"
+colbert_model = "answerdotai/answerai-colbert-small-v1"
 sufficiency_floor = 0.5   # dense-cosine threshold — governs abstention
 relevance_floor = 0.0     # optional rerank-score filter (0.0 = off)
 hybrid = true
@@ -161,10 +163,12 @@ graph_hops = 1
 |---|---|---|
 | `candidates` | `30` | Chunks fetched from each retriever before fusion |
 | `top_k` | `5` | Chunks passed to the LLM after all filtering |
-| `rerank` | `true` | Enable cross-encoder reranking |
-| `rerank_model` | `"Xenova/ms-marco-MiniLM-L-6-v2"` | ONNX cross-encoder model |
+| `rerank` | `true` | Enable reranking (backend chosen by `rerank_backend`) |
+| `rerank_backend` | `"cross-encoder"` | Reranker implementation: `"cross-encoder"` (sigmoid cross-encoder, uses `rerank_model`) or `"colbert"` (late-interaction MaxSim, uses `colbert_model`) |
+| `rerank_model` | `"Xenova/ms-marco-MiniLM-L-6-v2"` | ONNX cross-encoder model (used when `rerank_backend = "cross-encoder"`) |
+| `colbert_model` | `"answerdotai/answerai-colbert-small-v1"` | fastembed late-interaction model (used when `rerank_backend = "colbert"`) |
 | `sufficiency_floor` | `0.5` | Dense-cosine similarity threshold below which raggity abstains ("I don't have enough information") |
-| `relevance_floor` | `0.0` | Optional secondary filter on the sigmoid-normalised cross-encoder rerank score (0.0 = off); does not trigger abstention |
+| `relevance_floor` | `0.0` | Optional secondary filter on the rerank score (0.0 = off); does not trigger abstention. Not comparable across `rerank_backend` values — see below |
 | `hybrid` | `true` | Enable hybrid (dense + BM25) retrieval |
 | `dedup_cosine` | `0.92` | Cosine similarity threshold for chunk deduplication |
 | `rrf_k` | `60` | RRF fusion constant (higher = flatter curve) |
@@ -182,6 +186,29 @@ graph_hops = 1
 [retrieval]
 rerank_model = "BAAI/bge-reranker-v2-m3"   # ~1 GB, higher quality
 ```
+
+### Late-interaction reranking
+
+`rerank_backend = "colbert"` swaps the cross-encoder for a ColBERT-style late-interaction
+reranker (fastembed's `LateInteractionTextEmbedding`). Instead of scoring the whole
+query against the whole chunk in one pass, it embeds the query and each candidate as
+*per-token* vectors and scores each chunk with MaxSim (for every query token, the best
+matching chunk token; scores summed and normalized by query-token count). This gives
+finer-grained, query-token-level matching than a single cross-encoder pass — often
+better at catching a chunk that only satisfies part of a multi-clause query — at the
+cost of an extra ~0.13 GB model download on first use (the default
+`answerdotai/answerai-colbert-small-v1`) and somewhat more compute per rerank call.
+It is storage-free: no index changes, rerank-stage only.
+
+```toml
+[retrieval]
+rerank_backend = "colbert"
+```
+
+!!! warning
+    ColBERT MaxSim scores are normalized to roughly `[0, 1]` but are **not** on the
+    same scale as the cross-encoder's sigmoid scores. A `relevance_floor` tuned for
+    one `rerank_backend` does not transfer to the other — re-tune it if you switch.
 
 ---
 

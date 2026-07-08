@@ -136,6 +136,9 @@ class Raggity:
                 return None
             if self._shared is not None:
                 return self._shared.reranker
+            if self.cfg.retrieval.rerank_backend == "colbert":
+                from .reranker import ColbertReranker
+                return ColbertReranker(model_name=self.cfg.retrieval.colbert_model)
             from .reranker import FastEmbedReranker
             return FastEmbedReranker(model_name=self.cfg.retrieval.rerank_model)
         return self._lazy("_reranker", _factory)
