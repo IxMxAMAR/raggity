@@ -193,3 +193,33 @@ def test_rerank_backend_loaded_from_toml(tmp_path):
     cfg = load_config(str(p))
     assert cfg.retrieval.rerank_backend == "colbert"
     assert cfg.retrieval.colbert_model == "some/other-colbert"
+
+
+# ---------------------------------------------------------------------------
+# retrieval.contextual / retrieval.ingest_concurrency (T10: contextual retrieval)
+# ---------------------------------------------------------------------------
+
+def test_contextual_defaults_to_false():
+    from raggity.config import RetrievalConfig
+    assert RetrievalConfig().contextual is False
+
+
+def test_ingest_concurrency_defaults_to_eight():
+    from raggity.config import RetrievalConfig
+    assert RetrievalConfig().ingest_concurrency == 8
+
+
+def test_contextual_default_is_byte_identical_to_pre_existing_defaults():
+    """Adding contextual/ingest_concurrency must not perturb any other default."""
+    from raggity.config import RetrievalConfig
+    r = RetrievalConfig()
+    assert r.corrective is False
+    assert r.graph is False
+
+
+def test_contextual_loaded_from_toml(tmp_path):
+    p = tmp_path / "raggity.toml"
+    p.write_text('[retrieval]\ncontextual = true\ningest_concurrency = 4\n')
+    cfg = load_config(str(p))
+    assert cfg.retrieval.contextual is True
+    assert cfg.retrieval.ingest_concurrency == 4

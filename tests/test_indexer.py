@@ -139,6 +139,78 @@ def test_indexer_issues_one_batched_delete_sources_call(tmp_path, emb, monkeypat
     assert all("b.md" not in sp for sp in store.all_source_paths())
 
 
+# ---------------------------------------------------------------------------
+# retrieval.contextual (T10: Anthropic-style contextual retrieval at ingest)
+# ---------------------------------------------------------------------------
+
+class _FakeContextProvider:
+    def __init__(self, response="Situating context."):
+        self.response = response
+        self.calls = 0
+
+    async def complete(self, system, prompt):
+        self.calls += 1
+        return self.response
+
+
+def test_indexer_contextual_off_is_byte_identical(tmp_path, emb):
+    """contextual defaults to False: chunk text in the store is untouched,
+    and the provider (if any were passed) is never invoked."""
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    _write(notes / "a.md", "# A\n\nalpha content here")
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+
+    def _boom():
+        raise AssertionError("provider must not be built when contextual=False")
+
+    indexer = Indexer(emb, store, manifest_path=str(tmp_path / "manifest.json"),
+                      provider=_boom, contextual=False)
+    indexer.ingest([str(notes / "*.md")])
+
+    chunks = store.all_chunks()
+    assert len(chunks) >= 1
+    assert all("Situating context." not in c.text for c in chunks)
+    assert all(c.text.startswith("A > A\n\n") for c in chunks)
+
+
+def test_indexer_contextual_on_prepends_context_to_stored_text(tmp_path, emb):
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    _write(notes / "a.md", "# A\n\nalpha content here")
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    provider = _FakeContextProvider("Situating context.")
+
+    indexer = Indexer(emb, store, manifest_path=str(tmp_path / "manifest.json"),
+                      provider=provider, contextual=True, ingest_concurrency=4)
+    r = indexer.ingest([str(notes / "*.md")])
+
+    assert r.added >= 1
+    chunks = store.all_chunks()
+    assert len(chunks) >= 1
+    assert all(c.text.startswith("Situating context.\n\n") for c in chunks)
+    assert provider.calls == len(chunks)
+
+
+def test_indexer_contextual_only_pays_for_new_or_changed_chunks(tmp_path, emb):
+    """A no-op re-ingest (nothing changed) must not call the provider again."""
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    _write(notes / "a.md", "# A\n\nalpha content here")
+    store = LanceDBStore(path=str(tmp_path / "idx"), dim=emb.dim)
+    provider = _FakeContextProvider("ctx")
+
+    indexer = Indexer(emb, store, manifest_path=str(tmp_path / "manifest.json"),
+                      provider=provider, contextual=True)
+    indexer.ingest([str(notes / "*.md")])
+    first_calls = provider.calls
+    assert first_calls >= 1
+
+    r2 = indexer.ingest([str(notes / "*.md")])
+    assert r2.added == 0 and r2.updated == 0
+    assert provider.calls == first_calls  # no new LLM calls on no-op ingest
+
+
 def test_ingest_report_carries_skipped_needs_extra(tmp_path, emb, monkeypatch):
     """When a reader raises MissingDependencyError, IngestReport records it."""
     import raggity.readers as r

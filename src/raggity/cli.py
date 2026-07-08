@@ -245,7 +245,13 @@ def doctor(config: str = typer.Option(None, "--config")):
 def ingest(config: str = typer.Option(None, "--config")):
     """Incrementally index configured source folders."""
     _check_no_config(config)
-    report = _rag(config).ingest()
+    rag = _rag(config)
+    if rag.cfg.retrieval.contextual:
+        console.print(
+            "[yellow]Contextual retrieval enabled:[/yellow] 1 extra LLM call per "
+            "new/changed chunk (retrieval.contextual = true)."
+        )
+    report = rag.ingest()
     if report.scanned > 10_000:
         console.print(
             f"[yellow]Matched {report.scanned} files - check your "

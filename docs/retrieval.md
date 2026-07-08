@@ -240,6 +240,25 @@ rag ask "How do our backup retention, restore, and offsite policies fit together
 
 ---
 
+## Contextual retrieval (opt-in)
+
+Contextual retrieval follows Anthropic's technique: at ingest time, before embedding, raggity asks the LLM to write a short (1-2 sentence) blurb situating each chunk within its full source document, and prepends that blurb to the chunk's stored **and** embedded text. This helps retrieval when a chunk reads ambiguously in isolation (e.g. "the third quarter" without knowing which document or year) — the prepended context supplies the missing frame for both the embedding and the BM25 index.
+
+```toml
+[retrieval]
+contextual = true
+ingest_concurrency = 8   # bounded concurrent LLM calls during ingest (default 8)
+```
+
+- Applies to every path that chunks and upserts documents: `rag ingest` over configured sources, and the connector paths (`rag ingest-url`, `rag ingest-repo`, `rag ingest-obsidian`, and `sources.urls`).
+- **Incremental:** only new or changed chunks pay the LLM call — an unchanged file's chunks are never re-contextualized, same as the existing skip-unchanged ingest logic.
+- Citations verify against the full stored text (context + original), so highlighted-span overlap still works normally; nothing downstream needs to know contextual retrieval is on.
+- A per-chunk provider failure (or a blank response) leaves that one chunk's text unchanged rather than aborting the whole ingest.
+
+**Contextual retrieval is off by default and LLM-cost-heavy: one call per new/changed chunk.** `rag ingest` prints a notice before starting when it's enabled. For a corpus with thousands of chunks, budget accordingly — consider running an initial ingest with `contextual = false`, then flipping it on only for a curated subset, or lowering `ingest_concurrency` for strict-rate-limit backends.
+
+---
+
 ## Semantic answer cache
 
 When enabled, raggity stores answers in `<index.path>/answer_cache.json`, keyed on SHA-256 of the question + retrieved chunk IDs + model name. Cache hits return immediately with no LLM call.

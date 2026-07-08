@@ -87,6 +87,35 @@ def test_ingest_summary_shows_skipped_count(tmp_path):
     assert "skipped=" in r.output
 
 
+def test_ingest_contextual_prints_cost_notice(tmp_path, monkeypatch):
+    """`rag ingest` prints an up-front LLM-cost notice when retrieval.contextual=true."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = tmp_path / "raggity.toml"
+    cfg.write_text(
+        f'[sources]\ninclude = ["{(notes / "*.md").as_posix()}"]\n'
+        f'[index]\npath = "{(tmp_path / "idx").as_posix()}"\n'
+        '[retrieval]\ncontextual = true\n'
+    )
+
+    async def _fake_query(prompt, options):
+        yield _AssistantMessage("Context sentence.")
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    r = runner.invoke(cli_mod.app, ["ingest", "--config", str(cfg)])
+    assert r.exit_code == 0
+    assert "contextual" in r.output.lower()
+    assert "llm call" in r.output.lower() or "llm calls" in r.output.lower()
+
+
+def test_ingest_contextual_off_no_cost_notice(tmp_path):
+    cfg = _make_config(tmp_path)  # contextual defaults to False
+    r = runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
+    assert r.exit_code == 0
+    assert "contextual" not in r.output.lower()
+
+
 def test_ask_expand_flag(tmp_path, monkeypatch):
     cfg = _make_config(tmp_path)
     runner.invoke(cli_mod.app, ["ingest", "--config", cfg])

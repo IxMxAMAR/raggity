@@ -5,29 +5,7 @@ import json
 import os
 import threading
 
-
-def _run_async(coro):
-    """Run *coro* whether or not an event loop is already running.
-
-    - Outside a loop (normal CLI / sync usage): ``asyncio.run()``.
-    - Inside a running loop (pytest-asyncio, Jupyter): run in a new thread so
-      the coroutine gets its own fresh event loop without deadlocking the outer one.
-
-    Returns the coroutine's return value in both cases.
-    """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop is not None and loop.is_running():
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(asyncio.run, coro)
-            return future.result()  # propagate exceptions + return value
-    else:
-        return asyncio.run(coro)
-
-
+from .asyncio_utils import run_async as _run_async
 from .answerer import ProviderAnswerer
 from .config import RaggityConfig, load_config
 from .conversation import Conversation
@@ -223,8 +201,17 @@ class Raggity:
 
     def _fingerprint_with_dim(self, dim) -> str:
         rc = self.cfg.retrieval
-        return (f"{self.cfg.embedding.model}|{dim}|"
-                f"pd={rc.parent_document}|pt={rc.parent_target_tokens}|ct={rc.child_target_tokens}")
+        fp = (f"{self.cfg.embedding.model}|{dim}|"
+              f"pd={rc.parent_document}|pt={rc.parent_target_tokens}|ct={rc.child_target_tokens}")
+        # Contextual retrieval changes what text is stored+embedded per chunk, so
+        # toggling it must invalidate the index (a mixed index would be
+        # inconsistently embedded). The marker is appended ONLY when enabled so
+        # the default fingerprint stays byte-identical to earlier versions —
+        # upgrading raggity with contextual off never forces a re-embed — while
+        # flipping the flag in EITHER direction changes the fingerprint.
+        if rc.contextual:
+            fp += "|ctx=1"
+        return fp
 
     def _fingerprint(self) -> str:
         # dim is fully determined by the model name, so when the stored
@@ -264,12 +251,16 @@ class Raggity:
         chunk_kwargs = {"parent_document": self.cfg.retrieval.parent_document,
                         "parent_target_tokens": self.cfg.retrieval.parent_target_tokens,
                         "child_target_tokens": self.cfg.retrieval.child_target_tokens}
-        # Pass embedder/store as callables: a no-op ingest (nothing changed)
-        # then never loads the embedding model or opens the vector store.
+        # Pass embedder/store/provider as callables: a no-op ingest (nothing
+        # changed) or contextual=False never loads the embedding model, opens
+        # the vector store, or builds the LLM provider.
         indexer = Indexer(lambda: self.embedder, lambda: self.store,
                           self._manifest_path(),
                           fingerprint=self._fingerprint(), chunk_kwargs=chunk_kwargs,
-                          ann_threshold=self.cfg.index.ann_threshold)
+                          ann_threshold=self.cfg.index.ann_threshold,
+                          provider=lambda: self.provider,
+                          contextual=self.cfg.retrieval.contextual,
+                          ingest_concurrency=self.cfg.retrieval.ingest_concurrency)
         report = indexer.ingest(self.cfg.sources.include, self.cfg.sources.exclude)
 
         # Also ingest any configured URLs. depth=0 fetches exactly one page, so no
@@ -334,7 +325,14 @@ class Raggity:
             prev = manifest.get(doc.path)
             if doc.file_hash and prev is not None and prev.get("hash") == doc.file_hash:
                 continue  # content unchanged — skip re-chunk/re-embed
-            all_chunks.extend(chunk_document(doc, **chunk_kwargs))
+            doc_chunks = chunk_document(doc, **chunk_kwargs)
+            # Contextual retrieval (opt-in): only reaches new/changed docs here.
+            if self.cfg.retrieval.contextual and doc_chunks:
+                from .contextual import contextualize_chunks  # noqa: PLC0415
+                doc_chunks = _run_async(contextualize_chunks(
+                    doc.text, doc_chunks, self.provider,
+                    self.cfg.retrieval.ingest_concurrency))
+            all_chunks.extend(doc_chunks)
             manifest[doc.path] = {"hash": doc.file_hash}
         if scope is not None:
             for path in list(manifest.keys()):

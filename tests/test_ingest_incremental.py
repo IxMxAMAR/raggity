@@ -290,3 +290,51 @@ def test_connector_scoped_deletion_isolation(tmp_path):
 
     manifest = rag._load_connector_manifest()
     assert "scopeA/two" not in manifest and "scopeB/one" in manifest
+
+
+# ---------------------------------------------------------------------------
+# T10: contextual retrieval also applies to the connector-incremental path
+# ---------------------------------------------------------------------------
+
+def test_ingest_documents_contextual_prepends_context(tmp_path, monkeypatch):
+    from raggity.models import Document
+    from raggity.config import RaggityConfig, IndexConfig, RetrievalConfig
+    from raggity.core import Raggity
+    import raggity.llm as llm_mod
+
+    class _Block:
+        def __init__(self, t): self.text = t
+    class _AM:
+        def __init__(self, t): self.content = [_Block(t)]
+
+    async def _fake_query(prompt, options):
+        yield _AM("Connector-sourced context.")
+
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
+
+    rag = Raggity(RaggityConfig(index=IndexConfig(path=str(tmp_path / "idx")),
+                                retrieval=RetrievalConfig(contextual=True)))
+    doc = Document(path="https://x/a", title="A", text="alpha content here",
+                   file_hash="h1", mtime=0.0)
+    rag.ingest_documents([doc])
+
+    chunks = rag.store.all_chunks()
+    assert len(chunks) >= 1
+    assert all(c.text.startswith("Connector-sourced context.\n\n") for c in chunks)
+
+
+def test_ingest_documents_contextual_off_never_calls_provider(tmp_path, monkeypatch):
+    from raggity.models import Document
+    import raggity.llm as llm_mod
+
+    def _boom(prompt, options):
+        raise AssertionError("LLM must not be called when contextual=False")
+
+    monkeypatch.setattr(llm_mod, "query", _boom)
+
+    rag = _rag(tmp_path)  # default cfg: contextual=False
+    doc = Document(path="/fake/a.md", title="A", text="alpha content here",
+                   file_hash="", mtime=0.0)
+    n = rag.ingest_documents([doc])
+    assert n == 1

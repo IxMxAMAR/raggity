@@ -64,6 +64,13 @@ class RetrievalConfig(BaseModel):
     # round (query rewrite + re-retrieve + merge/rerank). Off by default.
     # Cost: +1 LLM call per question, +1 more (rewrite) when a round triggers.
     corrective: bool = False
+    # Anthropic-style contextual retrieval (opt-in). When true, `rag ingest`
+    # makes one LLM call per new/changed chunk to generate a 1-2 sentence
+    # document-context, prepended to the chunk's stored+embedded text. Off by
+    # default: massively LLM-cost-heavy for large corpora (one call per chunk).
+    contextual: bool = False
+    # Bounded concurrency for contextual-retrieval LLM calls during ingest.
+    ingest_concurrency: int = 8
 
     @field_validator("rerank_backend")
     @classmethod

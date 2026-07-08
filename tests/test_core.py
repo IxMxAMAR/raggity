@@ -246,6 +246,66 @@ def test_core_graph_load_on_init(tmp_path, monkeypatch):
     assert rag._graph.count() == 1
 
 
+# ---------------------------------------------------------------------------
+# retrieval.contextual (T10: contextual retrieval end-to-end via Raggity.ingest)
+# ---------------------------------------------------------------------------
+
+async def test_core_ingest_contextual_prepends_context(tmp_path, monkeypatch):
+    """Raggity.ingest() with retrieval.contextual=True prepends LLM-generated
+    context to every chunk's stored text (mocked Claude provider)."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    from raggity.config import RaggityConfig, SourcesConfig, IndexConfig, RetrievalConfig
+    from raggity.core import Raggity
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+        retrieval=RetrievalConfig(contextual=True),
+    )
+
+    class _Block:
+        def __init__(self, t): self.text = t
+    class _AM:
+        def __init__(self, t): self.content = [_Block(t)]
+
+    async def _fake_query(prompt, options):
+        yield _AM("This chunk covers nightly backup destinations.")
+
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
+
+    rag = Raggity(cfg)
+    report = rag.ingest()
+    assert report.added >= 1
+
+    chunks = rag.store.all_chunks()
+    assert len(chunks) >= 1
+    assert all(c.text.startswith("This chunk covers nightly backup destinations.\n\n")
+               for c in chunks)
+
+
+def test_core_ingest_contextual_off_never_calls_provider(tmp_path, monkeypatch):
+    """contextual=False (default): ingest never builds/calls the LLM provider."""
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nalpha content here")
+    from raggity.config import RaggityConfig, SourcesConfig, IndexConfig
+    from raggity.core import Raggity, _UNSET
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+    )
+
+    def _boom(prompt, options):
+        raise AssertionError("LLM must not be called when contextual=False")
+
+    monkeypatch.setattr(llm_mod, "query", _boom)
+
+    rag = Raggity(cfg)
+    report = rag.ingest()
+    assert report.added >= 1
+    assert rag._provider is _UNSET  # never built
+
+
 def test_fingerprint_changes_with_chunk_params(tmp_path):
     """_fingerprint() must change when chunk parameters change so stale chunks are evicted."""
     from raggity.config import RaggityConfig, IndexConfig, RetrievalConfig
@@ -278,6 +338,29 @@ def test_fingerprint_changes_with_chunk_params(tmp_path):
     assert fp1 != fp2, "different parent/child token targets → different fingerprint"
     assert fp1 != fp3, "parent_document=True vs False → different fingerprint"
     assert fp2 != fp3, "all three must be distinct"
+
+
+def test_fingerprint_changes_when_contextual_toggles(tmp_path):
+    """Toggling retrieval.contextual must change _fingerprint() (index rebuild):
+    contextual chunks are stored+embedded with an LLM-generated prefix, so mixing
+    them with plain chunks would leave the index inconsistently embedded.
+    The contextual=False fingerprint must stay byte-identical to the pre-T10
+    format so upgrading raggity never forces a rebuild on defaults."""
+    from raggity.config import RaggityConfig, IndexConfig, RetrievalConfig
+    from raggity.core import Raggity
+
+    base = RaggityConfig(index=IndexConfig(path=str(tmp_path / "idx")))
+    ctx = RaggityConfig(index=IndexConfig(path=str(tmp_path / "idx")),
+                        retrieval=RetrievalConfig(contextual=True))
+
+    fp_off = Raggity(base)._fingerprint()
+    fp_on = Raggity(ctx)._fingerprint()
+
+    assert fp_off != fp_on, "contextual on/off must produce distinct fingerprints"
+    # default (off) keeps the historical format: no contextual marker at all,
+    # so a version upgrade with defaults never invalidates an existing index
+    assert "ctx=1" not in fp_off
+    assert fp_on.endswith("|ctx=1")
 
 
 async def test_aask_decompose_applies_ordering(tmp_path, monkeypatch):

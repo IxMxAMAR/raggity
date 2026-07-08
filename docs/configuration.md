@@ -157,6 +157,8 @@ step_back = false
 expand_n = 3
 graph = false
 graph_hops = 1
+contextual = false
+ingest_concurrency = 8
 ```
 
 | Key | Default | Description |
@@ -180,6 +182,8 @@ graph_hops = 1
 | `graph_hops` | `1` | BFS hops from matched entities in the graph |
 | `graph_concurrency` | `8` | Concurrent LLM extraction calls during `rag graph-build` (lower it for strict-rate-limit backends) |
 | `corrective` | `false` | Enable CRAG-style corrective retrieval: a retrieval evaluator (+1 LLM call/question) plus one query-rewrite-and-merge round (+1 more when triggered) — see [Corrective retrieval](retrieval.md#corrective-retrieval-crag-style) |
+| `contextual` | `false` | Anthropic-style contextual retrieval: at ingest, prepend an LLM-generated 1-2 sentence document context to each chunk's stored+embedded text. **1 LLM call per new/changed chunk** — see below |
+| `ingest_concurrency` | `8` | Concurrent LLM context-generation calls during contextual ingest (lower it for strict-rate-limit backends) |
 
 ### Heavy reranker
 
@@ -210,6 +214,32 @@ rerank_backend = "colbert"
     ColBERT MaxSim scores are normalized to roughly `[0, 1]` but are **not** on the
     same scale as the cross-encoder's sigmoid scores. A `relevance_floor` tuned for
     one `rerank_backend` does not transfer to the other — re-tune it if you switch.
+
+### Contextual retrieval (`contextual`)
+
+Anthropic-style [contextual retrieval](https://www.anthropic.com/news/contextual-retrieval):
+at ingest time, one LLM call per chunk asks the model to situate that chunk within its
+full document in 1-2 sentences, and that context is prepended to the chunk's
+stored+embedded text. Chunks like *"revenue grew 3%"* become findable for queries that
+name the company or quarter the chunk never mentions. Citations verify against the full
+stored text, so citation support-checking works unchanged.
+
+```toml
+[retrieval]
+contextual = true
+ingest_concurrency = 8   # concurrent context-generation calls
+```
+
+!!! danger "Cost: one LLM call per new/changed chunk"
+    This is by far the most LLM-cost-heavy option in raggity. Ingesting a corpus that
+    chunks into 10,000 pieces makes **10,000 provider calls**. `rag ingest` prints a
+    notice when the flag is on. Incremental ingest keeps re-runs cheap: only new or
+    changed documents pay; unchanged documents are never re-contextualized. A provider
+    failure on a single chunk logs a warning and stores that chunk un-contextualized —
+    ingest never fails because of context generation.
+
+Toggling `contextual` changes the index fingerprint, so the next `rag ingest` rebuilds
+the index (chunks embedded with and without context prefixes must not be mixed).
 
 ---
 

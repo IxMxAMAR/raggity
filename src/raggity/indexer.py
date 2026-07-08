@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .asyncio_utils import run_async
 from .chunker import chunk_document
 from .loader import load_paths, scan_sources
 
@@ -22,21 +23,30 @@ class IngestReport:
 
 class Indexer:
     def __init__(self, embedder, store, manifest_path: str, fingerprint: str = "",
-                 chunk_kwargs: dict | None = None, ann_threshold: int = 0) -> None:
-        # embedder/store may be the objects themselves OR zero-arg callables
-        # returning them, so a no-op ingest never has to build either.
+                 chunk_kwargs: dict | None = None, ann_threshold: int = 0,
+                 provider=None, contextual: bool = False,
+                 ingest_concurrency: int = 8) -> None:
+        # embedder/store/provider may be the objects themselves OR zero-arg
+        # callables returning them, so a no-op (or contextual=False) ingest
+        # never has to build any of them.
         self.embedder = embedder
         self.store = store
         self.manifest_path = manifest_path
         self.fingerprint = fingerprint
         self.chunk_kwargs = chunk_kwargs
         self.ann_threshold = ann_threshold
+        self.provider = provider
+        self.contextual = contextual
+        self.ingest_concurrency = ingest_concurrency
 
     def _resolve_store(self):
         return self.store() if callable(self.store) else self.store
 
     def _resolve_embedder(self):
         return self.embedder() if callable(self.embedder) else self.embedder
+
+    def _resolve_provider(self):
+        return self.provider() if callable(self.provider) else self.provider
 
     def _load_manifest(self) -> dict[str, dict]:
         """Load the manifest, migrating v1 (flat ``{path: hash}``) to v2.
@@ -122,7 +132,15 @@ class Indexer:
             prev = manifest.get(doc.path)
             # changed → remove old chunks (batched below before upsert).
             to_delete.add(doc.path)
-            all_chunks.extend(chunk_document(doc, **(self.chunk_kwargs or {})))
+            doc_chunks = chunk_document(doc, **(self.chunk_kwargs or {}))
+            # Contextual retrieval (opt-in): only new/changed docs reach this
+            # loop at all, so "only new/changed chunks pay" falls out for free.
+            if self.contextual and doc_chunks:
+                from .contextual import contextualize_chunks  # noqa: PLC0415
+                doc_chunks = run_async(contextualize_chunks(
+                    doc.text, doc_chunks, self._resolve_provider(),
+                    self.ingest_concurrency))
+            all_chunks.extend(doc_chunks)
             new_manifest[doc.path] = {
                 "hash": doc.file_hash, "mtime": doc.mtime, "size": doc.size,
             }
