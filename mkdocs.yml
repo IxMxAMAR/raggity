@@ -36,6 +36,7 @@ nav:
   - Retrieval: retrieval.md
   - Ingestion: ingestion.md
   - Server & API: server.md
+  - MCP server: mcp.md
   - Deploy: deploy.md
 
 markdown_extensions:

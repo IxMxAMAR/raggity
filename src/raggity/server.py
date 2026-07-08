@@ -15,11 +15,11 @@ from pydantic import BaseModel, Field
 _WEB_DIR = Path(__file__).parent / "web"
 
 from . import __version__
-from .chunker import estimate_tokens
 from .config import RaggityConfig
 from .conversation import Conversation
 from .core import Raggity
-from .models import Chunk, Document
+from .models import Document
+from .packing import pack_context as _pack_context
 
 
 class AskRequest(BaseModel):
@@ -47,30 +47,6 @@ class RetrieveRequest(BaseModel):
     query: str
     k: int = Field(default=8, ge=1)
     max_context_tokens: int | None = Field(default=None, ge=1)
-
-
-def _pack_context(chunks: list[Chunk],
-                  max_context_tokens: int | None) -> tuple[str, int]:
-    """Greedily pack *chunks* (in retriever order) into a single context string.
-
-    Each block is ``[source: {source_path}]\\n{text}``, joined by blank lines.
-    With a budget, packing stops before the first block whose addition would push
-    :func:`estimate_tokens` past *max_context_tokens*; if even the FIRST block
-    does not fit it is char-truncated to ``budget * 4`` so the packed context is
-    never empty while chunks exist.  Returns ``(packed, token_count)``.
-    """
-    if not chunks:
-        return "", 0
-    packed = ""
-    for i, c in enumerate(chunks):
-        block = f"[source: {c.source_path}]\n{c.text}"
-        candidate = block if not packed else f"{packed}\n\n{block}"
-        if max_context_tokens is not None and estimate_tokens(candidate) > max_context_tokens:
-            if i == 0:
-                packed = block[: max_context_tokens * 4]
-            break
-        packed = candidate
-    return packed, estimate_tokens(packed)
 
 
 def _sse_data(text: str) -> str:

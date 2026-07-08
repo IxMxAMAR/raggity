@@ -194,6 +194,7 @@ Both `rag` and `raggity` are registered as console scripts — they are identica
 | `rag chat` | Start an interactive multi-turn chat REPL in the terminal |
 | `rag serve` | Start the local HTTP API server |
 | `rag serve --open` | Start the server and open the web chat UI in your default browser |
+| `rag mcp` | Expose the knowledge base as an [MCP server](https://ixmxamar.github.io/raggity/mcp/) over stdio (`search`/`ask`/`kb_status` tools) for Claude Code, Claude Desktop, Cursor (needs `raggity[mcp]`) |
 | `rag status` | Show index statistics (chunk count, source count, index path) |
 | `rag model` | Show the current generation backend/model (no args) |
 | `rag model <name> -p <provider>` | Switch backend/model in `raggity.toml` (comment-preserving); providers: `claude`/`anthropic`/`openai`/`ollama`/`lmstudio`/`llamacpp`/`vllm`/`jan`/`koboldcpp` |

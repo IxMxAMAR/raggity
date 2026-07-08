@@ -560,6 +560,27 @@ def watch(config: str = typer.Option(None, "--config"),
 
 
 @app.command()
+def mcp(config: str = typer.Option(None, "--config")):
+    """Expose the knowledge base as an MCP server over stdio.
+
+    Register with an MCP client (Claude Code, Claude Desktop, Cursor) so it can
+    query your knowledge base as a native tool. Example:
+
+        claude mcp add raggity -- rag mcp --config C:/path/raggity.toml
+    """
+    # Lazy import: keeps `import raggity.cli` free of the optional `mcp` dep and
+    # fast. The mcp package is imported lazily *inside* build_mcp, so a missing
+    # extra surfaces as ImportError when run_mcp runs (not at import time) — guard
+    # the call. Do NOT print to stdout on the success path — stdio is the pipe.
+    from .mcp_server import run_mcp
+    try:
+        run_mcp(config)
+    except ImportError:
+        console.print(r"[red]The MCP server needs extra deps:[/red] pip install raggity\[mcp]")
+        raise typer.Exit(1)
+
+
+@app.command()
 def serve(config: str = typer.Option(None, "--config"),
           host: str = typer.Option("127.0.0.1", "--host"),
           port: int = typer.Option(8000, "--port"),
