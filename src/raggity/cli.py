@@ -142,7 +142,9 @@ def _print_provider_table(statuses) -> None:
 def model(
     model_name: str = typer.Argument(None, help="Model name to switch to (omit to show current)."),
     provider: str = typer.Option(None, "--provider", "-p",
-                                 help="claude|anthropic|openai|ollama|lmstudio|llamacpp|vllm|jan|koboldcpp"),
+                                 help="claude|anthropic|openai|ollama|external|lmstudio|llamacpp|vllm|jan|koboldcpp"),
+    base_url: str = typer.Option(None, "--base-url",
+                                 help="Server base URL (required for external; overrides any default)."),
     list_providers: bool = typer.Option(False, "--list",
                                         help="List discovered local LLM providers and exit."),
     config: str = typer.Option(None, "--config"),
@@ -184,10 +186,25 @@ def model(
         doc["generation"] = gen
     gen["model"] = model_name
     if provider is not None:
-        backend, base_url = providers.BACKEND_ALIASES[provider]
+        backend, alias_base = providers.BACKEND_ALIASES[provider]
         gen["backend"] = backend
-        if base_url is not None:
-            gen["base_url"] = base_url
+        if alias_base is not None:
+            gen["base_url"] = alias_base
+    if base_url is not None:
+        gen["base_url"] = base_url
+
+    # backend=external is externally managed (Rigma) and has no default base_url:
+    # require one before persisting so we never write an unusable config.
+    if gen.get("backend") == "external" and not gen.get("base_url"):
+        if created:
+            target.unlink()  # don't leave a half-created template behind
+        console.print(
+            "[red]backend=external requires a base_url.[/red] "
+            "Pass [cyan]--base-url <url>[/cyan] "
+            "(e.g. http://127.0.0.1:9999) or set generation.base_url in the config."
+        )
+        raise typer.Exit(1)
+
     target.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
     if created:
@@ -203,6 +220,11 @@ def model(
         console.print(
             "[dim]ollama base_url defaults to http://localhost:11434/v1; "
             f"pull the model first: ollama pull {eff_model}[/dim]"
+        )
+    elif eff_backend == "external":
+        console.print(
+            "[dim]external server is managed outside raggity (e.g. Rigma); "
+            "raggity never starts it. Ensure it is running (rag doctor to check).[/dim]"
         )
     elif provider in ("lmstudio", "llamacpp", "vllm", "jan", "koboldcpp"):
         console.print(

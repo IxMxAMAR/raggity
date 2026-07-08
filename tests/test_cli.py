@@ -396,6 +396,52 @@ def test_model_preserves_template_comments(tmp_path, monkeypatch):
     assert tomllib.loads(after)["generation"]["model"] == "gemma3"
 
 
+def test_model_external_keeps_existing_base_url(tmp_path):
+    dest = tmp_path / "raggity.toml"
+    dest.write_text('[generation]\nmodel = "old"\nbase_url = "http://127.0.0.1:9999/v1"\n')
+    r = runner.invoke(cli_mod.app, ["model", "rigma-model", "-p", "external",
+                                    "--config", str(dest)])
+    assert r.exit_code == 0
+    import tomllib
+    data = tomllib.loads(dest.read_text())
+    assert data["generation"]["backend"] == "external"
+    assert data["generation"]["model"] == "rigma-model"
+    assert data["generation"]["base_url"] == "http://127.0.0.1:9999/v1"
+
+
+def test_model_external_accepts_base_url_option(tmp_path):
+    dest = tmp_path / "raggity.toml"
+    dest.write_text('[generation]\nmodel = "x"\n')
+    r = runner.invoke(cli_mod.app, ["model", "rigma-model", "-p", "external",
+                                    "--base-url", "http://127.0.0.1:9999",
+                                    "--config", str(dest)])
+    assert r.exit_code == 0
+    import tomllib
+    data = tomllib.loads(dest.read_text())
+    assert data["generation"]["backend"] == "external"
+    assert data["generation"]["base_url"] == "http://127.0.0.1:9999"
+
+
+def test_model_external_missing_base_url_errors(tmp_path):
+    dest = tmp_path / "raggity.toml"
+    dest.write_text('[generation]\nmodel = "x"\n')
+    r = runner.invoke(cli_mod.app, ["model", "rigma-model", "-p", "external",
+                                    "--config", str(dest)])
+    assert r.exit_code != 0
+    assert "base_url" in r.output or "base-url" in r.output
+
+
+def test_model_base_url_option_overrides_for_any_provider(tmp_path):
+    dest = tmp_path / "raggity.toml"
+    dest.write_text('[generation]\nmodel = "x"\n')
+    r = runner.invoke(cli_mod.app, ["model", "gemma3", "-p", "ollama",
+                                    "--base-url", "http://box:11434/v1",
+                                    "--config", str(dest)])
+    assert r.exit_code == 0
+    import tomllib
+    assert tomllib.loads(dest.read_text())["generation"]["base_url"] == "http://box:11434/v1"
+
+
 def test_model_missing_file_creates_then_applies(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     import platformdirs

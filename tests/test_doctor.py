@@ -109,3 +109,47 @@ def test_check_generation_ollama_unreachable_fail(monkeypatch):
     status, _, hint = doc.check_generation(_ollama_cfg("gemma3"))
     assert status == doc.FAIL
     assert "Ollama running" in hint
+
+
+# ---------------------------------------------------------------------------
+# check_generation: external (readiness probe, NEVER auto-starts)
+# ---------------------------------------------------------------------------
+
+def _external_cfg(base_url="http://127.0.0.1:9999"):
+    return RaggityConfig(generation=GenerationConfig(
+        backend="external", model="rigma-model", base_url=base_url))
+
+
+def test_check_generation_external_reachable_ok(monkeypatch):
+    from raggity import providers
+    monkeypatch.setattr(providers, "external_ready", lambda *a, **k: True)
+    status, detail, _ = doc.check_generation(_external_cfg())
+    assert status == doc.OK
+    assert "external server reachable" in detail
+    assert "http://127.0.0.1:9999" in detail
+
+
+def test_check_generation_external_unreachable_fail(monkeypatch):
+    from raggity import providers
+    monkeypatch.setattr(providers, "external_ready", lambda *a, **k: False)
+    status, detail, _ = doc.check_generation(_external_cfg())
+    assert status == doc.FAIL
+    assert "external server unreachable" in detail
+    assert "never auto-starts" in detail
+    assert "http://127.0.0.1:9999" in detail
+
+
+def test_check_generation_external_missing_base_url_fail(monkeypatch):
+    status, detail, hint = doc.check_generation(_external_cfg(base_url=None))
+    assert status == doc.FAIL
+    assert "base_url" in detail or "base_url" in hint
+
+
+def test_check_generation_external_never_calls_ensure_running(monkeypatch):
+    """doctor's external check must NOT touch the auto-start path."""
+    from raggity import providers
+    calls = []
+    monkeypatch.setattr(providers, "ensure_running", lambda *a, **k: calls.append(a) or True)
+    monkeypatch.setattr(providers, "external_ready", lambda *a, **k: True)
+    doc.check_generation(_external_cfg())
+    assert calls == []

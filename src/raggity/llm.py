@@ -129,7 +129,8 @@ def build_provider(gen_cfg) -> LLMProvider:
     backend = gen_cfg.backend
     if backend == "claude":
         return ClaudeProvider(model=gen_cfg.model, auth=gen_cfg.auth)
-    if backend in ("openai", "ollama"):
+    if backend in ("openai", "ollama", "external"):
         from .llm_openai import OpenAICompatProvider  # added in Task A4
         return OpenAICompatProvider.from_config(gen_cfg)
-    raise ValueError(f"unknown generation.backend {backend!r} (expected claude|openai|ollama)")
+    raise ValueError(
+        f"unknown generation.backend {backend!r} (expected claude|openai|ollama|external)")

@@ -121,6 +121,17 @@ def check_generation(cfg) -> tuple[str, str, str]:
             return (WARN, f"{detail} but model {gen.model!r} not pulled",
                     f"model not pulled? run `ollama pull {gen.model}`")
         return (OK, f"{detail} model={gen.model}", "")
+    if backend == "external":
+        base = gen.base_url
+        if not base:
+            return (FAIL, "backend=external but no base_url set",
+                    "set generation.base_url to the external server URL "
+                    "(or `rag model <name> -p external --base-url <url>`)")
+        # Same readiness probe the provider uses; NEVER auto-starts (Rigma owns it).
+        if providers.external_ready(base):
+            return (OK, f"external server reachable at {base}", "")
+        return (FAIL, f"external server unreachable at {base} - backend=external never auto-starts",
+                "start the server (Rigma owns its lifecycle); raggity never launches it")
     if backend == "openai":
         base = gen.base_url or "https://api.openai.com/v1"
         key = os.environ.get(gen.api_key_env)
@@ -133,7 +144,7 @@ def check_generation(cfg) -> tuple[str, str, str]:
             return (WARN, f"backend=openai endpoint {base} not reachable",
                     "network issue or invalid key (best-effort check)")
         return (OK, f"backend=openai model={gen.model} at {base}", "")
-    return (WARN, f"backend={backend!r} unrecognized", "expected claude|openai|ollama")
+    return (WARN, f"backend={backend!r} unrecognized", "expected claude|openai|ollama|external")
 
 
 def check_index_writable(cfg) -> tuple[str, str, str]:

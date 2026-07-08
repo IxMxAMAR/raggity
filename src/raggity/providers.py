@@ -99,6 +99,9 @@ BACKEND_ALIASES: dict[str, tuple[str, str | None]] = {
     "anthropic": ("claude", None),
     "openai": ("openai", None),
     "ollama": ("ollama", None),
+    # Externally-managed OpenAI-compatible server (Rigma owns lifecycle).  No
+    # default base_url — it MUST be supplied (config or `--base-url`).
+    "external": ("external", None),
     "lmstudio": ("openai", _SPECS["lmstudio"]["base_url"]),
     "llamacpp": ("openai", _SPECS["llamacpp"]["base_url"]),
     "vllm": ("openai", _SPECS["vllm"]["base_url"]),
@@ -178,6 +181,30 @@ def provider_for_base_url(base_url: str | None) -> str | None:
         if spec["base_url"].rstrip("/") == norm:
             return name
     return None
+
+
+def external_ready(base_url: str | None, timeout: float = 2.0) -> bool:
+    """Readiness probe for ``backend="external"`` (Rigma-managed server).
+
+    GET ``<root>/health``; on ANY failure fall back to GET ``<root>/v1/models``.
+    Returns True on the first success, False when both fail.  This NEVER starts a
+    server — ``backend=external`` means the runtime's lifecycle is owned elsewhere
+    (Rigma).  ``<root>`` is *base_url* with a trailing ``/v1`` stripped, so both
+    ``http://host:9999`` and ``http://host:9999/v1`` probe the same endpoints.
+    """
+    if not base_url:
+        return False
+    root = _root(base_url)
+    try:
+        _get_json(root + "/health", timeout=timeout)
+        return True
+    except Exception:
+        pass
+    try:
+        _get_json(root + "/v1/models", timeout=timeout)
+        return True
+    except Exception:
+        return False
 
 
 def _reachable(name: str, base_url: str) -> bool:
