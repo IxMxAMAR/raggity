@@ -102,7 +102,7 @@ If you prefer to use an API key instead:
 
 ## Generation backends
 
-raggity supports three generation backends, controlled by `generation.backend` in `raggity.toml`.
+raggity supports four generation backends, controlled by `generation.backend` in `raggity.toml`.
 
 ### Claude (default)
 
@@ -147,7 +147,22 @@ model = "llama3.1"
 # base_url defaults to http://localhost:11434/v1 — omit unless Ollama is on a different port
 ```
 
-The `auth` field is ignored for `openai` and `ollama` backends.
+### External (managed by another tool)
+
+Targets an OpenAI-compatible server whose lifecycle is owned outside raggity — e.g. [Rigma](https://github.com/IxMxAMAR/rigma), or a server you start yourself. raggity never auto-starts it.
+
+```toml
+[generation]
+backend = "external"
+model = "some-model"
+base_url = "http://127.0.0.1:9999/v1"   # required — no default
+```
+
+```bash
+rag model some-model -p external --base-url http://127.0.0.1:9999
+```
+
+The `auth` field is ignored for `openai`, `ollama`, and `external` backends.
 
 ---
 
@@ -197,7 +212,7 @@ Both `rag` and `raggity` are registered as console scripts — they are identica
 | `rag mcp` | Expose the knowledge base as an [MCP server](https://ixmxamar.github.io/raggity/mcp/) over stdio (`search`/`ask`/`kb_status` tools) for Claude Code, Claude Desktop, Cursor (needs `raggity[mcp]`) |
 | `rag status` | Show index statistics (chunk count, source count, index path) |
 | `rag model` | Show the current generation backend/model (no args) |
-| `rag model <name> -p <provider>` | Switch backend/model in `raggity.toml` (comment-preserving); providers: `claude`/`anthropic`/`openai`/`ollama`/`lmstudio`/`llamacpp`/`vllm`/`jan`/`koboldcpp` |
+| `rag model <name> -p <provider>` | Switch backend/model in `raggity.toml` (comment-preserving); providers: `claude`/`anthropic`/`openai`/`ollama`/`external`/`lmstudio`/`llamacpp`/`vllm`/`jan`/`koboldcpp` |
 | `rag model --list` | List discovered local LLM providers (running / installed / models) |
 | `rag doctor` | Run environment diagnostics (config, index, embedding, generation backend, providers) |
 | `rag reindex --force` | Wipe and rebuild the index from scratch |
@@ -611,6 +626,8 @@ rag serve --open
 - `GET /ask/stream?question=...&session_id=...` — SSE streaming answer; yields `data:` delta chunks, then a terminal `event: done` with a JSON payload containing `citations` (and `session_id` when provided)
 - `DELETE /session/{id}` — discard a conversation session
 - `GET /status` — index statistics
+- `GET /healthz` — unauthenticated liveness probe; store-only, works even when the generation backend is down (see [docs/server.md](docs/server.md))
+- `POST /retrieve` — retrieval-only endpoint (chunks + packed context, no LLM call) for external orchestrators (see [docs/server.md](docs/server.md))
 
 #### Server sessions
 

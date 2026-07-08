@@ -136,6 +136,77 @@ Index statistics (chunk count, source count, index path).
 curl http://localhost:8000/status
 ```
 
+### `GET /healthz`
+
+**Unauthenticated** liveness probe — no `X-API-Key`/`Authorization` header required, even when `server.auth = "api_key"`. It is deliberately cheap: it only touches the vector store (`store.count()`) and never loads the embedding model, reranker, or LLM provider, so it responds in about 2 ms and keeps working even when the generation backend is completely unreachable.
+
+```bash
+curl http://localhost:8000/healthz
+```
+
+```json
+{
+  "status": "ok",
+  "version": "0.11.0",
+  "index_backend": "lancedb",
+  "documents": 1234
+}
+```
+
+`documents` is the **chunk count**, not the source-document count (the work-order contract for this endpoint). Under `server.per_user = true` it always reports the shared **base** index — it is a liveness signal, not a per-tenant statistic; use `GET /status` (authenticated) for per-tenant numbers.
+
+### `POST /retrieve`
+
+Retrieval only — no LLM call is made and no query transforms run, so it keeps working even when the generation backend is unreachable. Returns the top-`k` chunks plus a greedily-packed context string, so external orchestrators (agents, other tools) can do their own relevance judgment and generation.
+
+Request:
+
+```json
+{"query": "How do backups work?", "k": 8, "max_context_tokens": 2000}
+```
+
+| Field | Default | Description |
+|---|---|---|
+| `query` | required | Search query |
+| `k` | `8` (`>= 1`) | Number of chunks to retrieve |
+| `max_context_tokens` | `null` (`>= 1` when set) | Optional budget for `packed_context`; unset packs all retrieved chunks |
+
+Response:
+
+```json
+{
+  "chunks": [
+    {
+      "text": "Backups run nightly at 2am...",
+      "score": 0.83,
+      "source": "notes/ops.md",
+      "metadata": {
+        "title": "Ops notes",
+        "heading_path": "Backups",
+        "chunk_id": "abc123",
+        "ordinal": 0
+      }
+    }
+  ],
+  "packed_context": "[source: notes/ops.md]\nBackups run nightly at 2am...",
+  "token_count": 42,
+  "tokenizer": "chars/4-approx"
+}
+```
+
+`packed_context` joins `[source: <path>]\n<text>` blocks with blank lines, greedily packed to `max_context_tokens` (when set) using the `chars/4` approximate tokenizer reported in `tokenizer`.
+
+By design this endpoint **bypasses the sufficiency-floor abstention** used by `/ask` and `/chat` — callers get the raw top-k with scores and judge relevance themselves rather than raggity silently withholding low-confidence results.
+
+`/retrieve` is authenticated the same way as the other data routes (respects `server.auth`) and is per-tenant aware under `server.per_user = true`.
+
+```bash
+curl -X POST http://localhost:8000/retrieve \
+  -H "content-type: application/json" \
+  -H "X-API-Key: $KEY" \
+  -d '{"query": "How do backups work?", "k": 8, "max_context_tokens": 2000}'
+```
+
 ---
 
 ## Sessions

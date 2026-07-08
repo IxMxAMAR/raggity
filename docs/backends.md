@@ -1,6 +1,6 @@
 # Backends
 
-raggity supports three **LLM generation backends** and two **vector store backends**.
+raggity supports four **LLM generation backends** and two **vector store backends**.
 
 ---
 
@@ -71,6 +71,33 @@ ollama pull llama3.1
 backend = "ollama"
 model = "llama3.1"
 # base_url defaults to http://localhost:11434/v1 — omit unless Ollama is on a different port
+```
+
+The `auth` field is ignored for this backend.
+
+### External (managed by another tool)
+
+Targets an OpenAI-compatible server whose lifecycle is owned outside raggity —
+for example [Rigma](https://github.com/IxMxAMAR/rigma), or a server you start
+and manage yourself. raggity **never** starts, stops, or otherwise manages
+this server's process.
+
+```toml
+[generation]
+backend = "external"
+model = "some-model"
+base_url = "http://127.0.0.1:9999/v1"   # required — no default
+```
+
+`base_url` is required — raggity raises at startup if it's missing. Readiness
+is a lazy probe (`GET <root>/health`, falling back to `GET <root>/v1/models`)
+rather than an auto-start attempt; if both probes fail, the error names the
+exact `base_url` and states that `backend=external` never launches servers.
+
+Switch to it from the CLI:
+
+```bash
+rag model some-model -p external --base-url http://127.0.0.1:9999
 ```
 
 The `auth` field is ignored for this backend.

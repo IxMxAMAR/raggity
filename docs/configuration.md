@@ -39,7 +39,7 @@ validation error naming the valid choices.
 [--] profile: low-ram (rerank/graph/caches off, embedded lancedb)
 ```
 
-**Measured serve RSS ceiling:** _measured at release_
+**Measured serve RSS ceiling:** 302 MB peak working set (Windows 11 x64, Python 3.12, raggity v0.11.0, low-ram profile, 5-doc LanceDB index, serving /healthz + /retrieve traffic; embedding model loaded, reranker/graph/caches disabled).
 
 ---
 
@@ -232,6 +232,11 @@ cache = false
 # model = "llama3.1"
 # base_url = "http://localhost:11434/v1"
 
+# Externally-managed OpenAI-compatible backend
+# backend = "external"
+# model = "some-model"
+# base_url = "http://127.0.0.1:9999/v1"
+
 # Opt-in personalization (default off). See "Personalization" below.
 # persona = "The user is Dr. Vane, a cardiologist. Prefer clinical phrasing."
 # personal_kb = false
@@ -243,7 +248,7 @@ cache = false
 
 | Key | Default | Description |
 |---|---|---|
-| `backend` | `"claude"` | LLM backend: `"claude"`, `"openai"`, or `"ollama"` |
+| `backend` | `"claude"` | LLM backend: `"claude"`, `"openai"`, `"ollama"`, or `"external"` |
 | `model` | `"claude-opus-4-8"` | Model name (backend-specific) |
 | `auth` | `"auto"` | Claude auth mode: `"auto"`, `"subscription"`, or `"api_key"` |
 | `cache` | `false` | Semantic answer cache (keyed on question + chunks + model + effective system prompt) |
@@ -292,6 +297,32 @@ default `base_url` (no API key required for a loopback server); `ollama` keeps
 on first request if the `ollama` binary is found and the server is not already
 up. `rag doctor` reports the full discovery table and, for ollama, will start
 the server and check that the configured model is pulled.
+
+### Externally-managed backend (`backend = "external"`)
+
+`backend = "external"` targets an OpenAI-compatible server whose lifecycle is
+owned by another tool — for example [Rigma](https://github.com/IxMxAMAR/rigma)
+or a server you start and manage yourself. raggity **never** auto-starts it,
+even if a runtime binary is discoverable on the machine.
+
+```toml
+[generation]
+backend = "external"
+model = "some-model"
+base_url = "http://127.0.0.1:9999/v1"   # required — no default
+```
+
+`base_url` is **required**; raggity raises at startup if it's missing.
+Readiness is checked lazily on first request (and by `rag doctor`) via `GET
+<root>/health`, falling back to `GET <root>/v1/models` if that fails. If both
+probes fail, raggity raises a clear error naming the exact `base_url` and
+stating that `backend=external` never launches servers itself.
+
+Switch to it from the CLI:
+
+```bash
+rag model some-model -p external --base-url http://127.0.0.1:9999
+```
 
 ---
 
