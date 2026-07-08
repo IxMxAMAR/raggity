@@ -238,3 +238,40 @@ def test_pyproject_declares_mcp_extra():
     extras = data["project"]["optional-dependencies"]
     assert any(dep.startswith("mcp") for dep in extras["mcp"])
     assert any(dep.startswith("mcp") for dep in extras["all"])
+
+
+def test_run_mcp_warms_retriever_before_stdio_loop(tmp_path, monkeypatch):
+    """run_mcp must build the retrieval stack on the MAIN thread before mcp.run().
+
+    Lazily importing numpy/onnxruntime inside an anyio worker thread deadlocks
+    on the Windows DLL loader lock under the stdio transport (observed live);
+    the eager warm-up is the regression guard for that hang.
+    """
+    import raggity.mcp_server as mcp_server
+    from raggity.core import _UNSET
+
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nwarmup fact", encoding="utf-8")
+    cfg = tmp_path / "raggity.toml"
+    cfg.write_text(
+        f'[sources]\ninclude = ["{(notes / "*.md").as_posix()}"]\n'
+        f'[index]\npath = "{(tmp_path / "idx").as_posix()}"\n',
+        encoding="utf-8",
+    )
+
+    warmed_at_run = {}
+
+    class _FakeMCP:
+        def run(self):
+            pass
+
+    def _fake_build(rag):
+        warmed_at_run["retriever_built"] = rag.__dict__["_retriever"] is not _UNSET
+        return _FakeMCP()
+
+    monkeypatch.setattr(mcp_server, "build_mcp", _fake_build)
+    mcp_server.run_mcp(str(cfg))
+    assert warmed_at_run["retriever_built"] is True, (
+        "retriever must be warm before the stdio server starts"
+    )

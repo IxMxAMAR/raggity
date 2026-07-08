@@ -142,5 +142,12 @@ def run_mcp(config_path: str | None = None) -> None:
     from .core import Raggity
 
     rag = Raggity.from_config(config_path)
+    # Warm the retrieval stack (embedder/store/reranker) on the MAIN thread
+    # BEFORE the stdio loop starts. The first `search` otherwise lazily imports
+    # numpy/onnxruntime C extensions inside an anyio worker thread, which
+    # deadlocks on the Windows DLL loader lock under the stdio transport
+    # (observed live: worker stuck in numpy create_module, server hung).
+    # Warming here also makes the first tool call fast.
+    _ = rag.retriever
     mcp = build_mcp(rag)
     mcp.run()  # transport defaults to "stdio"
