@@ -159,6 +159,7 @@ graph = false
 graph_hops = 1
 contextual = false
 ingest_concurrency = 8
+sparse = "bm25"          # qdrant-only: "bm25" | "splade" | "bm42"
 ```
 
 | Key | Default | Description |
@@ -166,7 +167,7 @@ ingest_concurrency = 8
 | `candidates` | `30` | Chunks fetched from each retriever before fusion |
 | `top_k` | `5` | Chunks passed to the LLM after all filtering |
 | `rerank` | `true` | Enable reranking (backend chosen by `rerank_backend`) |
-| `rerank_backend` | `"cross-encoder"` | Reranker implementation: `"cross-encoder"` (sigmoid cross-encoder, uses `rerank_model`) or `"colbert"` (late-interaction MaxSim, uses `colbert_model`) |
+| `rerank_backend` | `"cross-encoder"` | Reranker implementation: `"cross-encoder"` (sigmoid cross-encoder, uses `rerank_model`), `"colbert"` (late-interaction MaxSim, uses `colbert_model`), or a dotted import path `"package.module:ClassName"` for a custom reranker — see [Custom rerankers](#custom-rerankers) |
 | `rerank_model` | `"Xenova/ms-marco-MiniLM-L-6-v2"` | ONNX cross-encoder model (used when `rerank_backend = "cross-encoder"`) |
 | `colbert_model` | `"answerdotai/answerai-colbert-small-v1"` | fastembed late-interaction model (used when `rerank_backend = "colbert"`) |
 | `sufficiency_floor` | `0.5` | Dense-cosine similarity threshold below which raggity abstains ("I don't have enough information") |
@@ -184,6 +185,7 @@ ingest_concurrency = 8
 | `corrective` | `false` | Enable CRAG-style corrective retrieval: a retrieval evaluator (+1 LLM call/question) plus one query-rewrite-and-merge round (+1 more when triggered) — see [Corrective retrieval](retrieval.md#corrective-retrieval-crag-style) |
 | `contextual` | `false` | Anthropic-style contextual retrieval: at ingest, prepend an LLM-generated 1-2 sentence document context to each chunk's stored+embedded text. **1 LLM call per new/changed chunk** — see below |
 | `ingest_concurrency` | `8` | Concurrent LLM context-generation calls during contextual ingest (lower it for strict-rate-limit backends) |
+| `sparse` | `"bm25"` | **Qdrant-only** learned-sparse retrieval: `"bm25"` (default), `"splade"`, or `"bm42"`. On `backend = "lancedb"` any non-`bm25` value is ignored (warning at startup) and falls back to BM25 FTS — see [Learned-sparse retrieval](#learned-sparse-retrieval-qdrant) |
 
 ### Heavy reranker
 
@@ -214,6 +216,75 @@ rerank_backend = "colbert"
     ColBERT MaxSim scores are normalized to roughly `[0, 1]` but are **not** on the
     same scale as the cross-encoder's sigmoid scores. A `relevance_floor` tuned for
     one `rerank_backend` does not transfer to the other — re-tune it if you switch.
+
+### Custom rerankers
+
+`rerank_backend` also accepts a **dotted import path** `"package.module:ClassName"`,
+letting you drop in any reranker without touching raggity. When the value contains a
+colon, raggity imports the class and instantiates it as
+`ClassName(model_name=cfg.retrieval.rerank_model)`.
+
+The contract is the same as the built-in rerankers:
+
+- constructed with a single `model_name` keyword argument;
+- exposes `rerank(query: str, chunks: list[Chunk]) -> list[Chunk]` that returns the
+  chunks with their `.score` set and **sorted descending** by score.
+
+```python
+# my_pkg/rerankers.py
+from dataclasses import replace
+
+class MyReranker:
+    def __init__(self, model_name: str = "my-model"):
+        self.model_name = model_name
+        # ... load your model ...
+
+    def rerank(self, query, chunks):
+        scored = [replace(c, score=my_score(query, c.text)) for c in chunks]
+        scored.sort(key=lambda c: c.score, reverse=True)
+        return scored
+```
+
+```toml
+[retrieval]
+rerank_backend = "my_pkg.rerankers:MyReranker"
+rerank_model = "my-model"   # passed to your class as model_name=...
+```
+
+The module must be importable on `PYTHONPATH`. As with ColBERT, custom scores are not
+comparable to the cross-encoder sigmoid scale, so re-tune `relevance_floor` if you use it.
+
+### Learned-sparse retrieval (Qdrant)
+
+By default the sparse half of hybrid retrieval uses BM25 (LanceDB's Tantivy FTS, or
+Qdrant's `MatchText`). On the **Qdrant backend** you can instead use a learned-sparse
+model, which encodes queries and documents as sparse term-weight vectors (with term
+expansion) rather than exact keyword matches — often better recall on paraphrased or
+vocabulary-mismatched queries:
+
+```toml
+[index]
+backend = "qdrant"
+
+[retrieval]
+sparse = "splade"   # or "bm42"
+```
+
+| `sparse` | Model | Size | Notes |
+|---|---|---|---|
+| `"bm25"` (default) | — | — | Exact keyword match (`MatchText`); no extra download |
+| `"splade"` | `prithivida/Splade_PP_en_v1` | ~0.53 GB | SPLADE++ learned weights, highest quality |
+| `"bm42"` | `Qdrant/bm42-all-minilm-l6-v2-attentions` | ~0.09 GB | Attention-based, IDF-modified; small and fast |
+
+When enabled, raggity stores a named sparse vector alongside the dense vector at upsert
+and queries it at retrieval; the sparse results flow into RRF exactly like BM25 results
+(rank-based fusion, so the different score scale is irrelevant). The sparse choice is part
+of the index fingerprint, so toggling it triggers a rebuild on the next `rag ingest`.
+
+!!! warning "LanceDB fallback"
+    Learned-sparse is Qdrant-only. On `backend = "lancedb"`, any `sparse` other than
+    `"bm25"` is **ignored** — raggity logs a warning at startup and uses BM25 FTS.
+    LanceDB has no sparse-vector index.
 
 ### Contextual retrieval (`contextual`)
 

@@ -13,6 +13,17 @@ def register(role: str, name: str, dotted: str) -> None:
     _REGISTRY[(role, name)] = dotted
 
 
+def import_dotted(dotted: str) -> type:
+    """Import ``"package.module:ClassName"`` and return the class.
+
+    Used for user-supplied pluggable components (e.g. a custom reranker named
+    directly by dotted path in config) that are not pre-registered by name.
+    """
+    module_path, _, attr = dotted.partition(":")
+    module = importlib.import_module(module_path)
+    return getattr(module, attr)
+
+
 def resolve(role: str, name: str) -> type:
     dotted = _REGISTRY.get((role, name))
     if dotted is None:

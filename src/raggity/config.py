@@ -7,6 +7,9 @@ import platformdirs
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 VALID_RERANK_BACKENDS: tuple[str, ...] = ("cross-encoder", "colbert")
+# Learned-sparse retrieval choices (Qdrant backend only; LanceDB falls back to
+# BM25 FTS with a warning).  "bm25" (default) keeps the existing behavior.
+VALID_SPARSE: tuple[str, ...] = ("bm25", "splade", "bm42")
 
 
 class SourcesConfig(BaseModel):
@@ -71,13 +74,30 @@ class RetrievalConfig(BaseModel):
     contextual: bool = False
     # Bounded concurrency for contextual-retrieval LLM calls during ingest.
     ingest_concurrency: int = 8
+    # Learned-sparse retrieval (Qdrant backend only). "bm25" (default) keeps the
+    # existing MatchText/BM25 behavior. "splade"/"bm42" store fastembed sparse
+    # vectors at upsert and query them at retrieval. On backend=lancedb any
+    # non-bm25 value is ignored (warning at store build) and falls back to BM25.
+    sparse: str = "bm25"
 
     @field_validator("rerank_backend")
     @classmethod
     def _validate_rerank_backend(cls, v: str) -> str:
-        if v not in VALID_RERANK_BACKENDS:
-            choices = ", ".join(f'"{b}"' for b in VALID_RERANK_BACKENDS)
-            raise ValueError(f"invalid rerank_backend {v!r}; valid choices: {choices}")
+        # Accept the named backends OR a dotted import path ("pkg.module:Class")
+        # for a user-supplied custom reranker resolved at build time.
+        if v in VALID_RERANK_BACKENDS or ":" in v:
+            return v
+        choices = ", ".join(f'"{b}"' for b in VALID_RERANK_BACKENDS)
+        raise ValueError(
+            f"invalid rerank_backend {v!r}; valid choices: {choices}, "
+            f'or a dotted import path "package.module:ClassName"')
+
+    @field_validator("sparse")
+    @classmethod
+    def _validate_sparse(cls, v: str) -> str:
+        if v not in VALID_SPARSE:
+            choices = ", ".join(f'"{b}"' for b in VALID_SPARSE)
+            raise ValueError(f"invalid sparse {v!r}; valid choices: {choices}")
         return v
 
 

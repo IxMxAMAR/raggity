@@ -148,6 +148,11 @@ docker run -p 6333:6333 qdrant/qdrant
 
 **Recommended for:** large corpora, multi-user server deployments.
 
+Qdrant also unlocks **learned-sparse retrieval** — set `retrieval.sparse = "splade"`
+or `"bm42"` to replace exact-keyword BM25 with a learned sparse model (stored as a named
+sparse vector). LanceDB has no sparse-vector index and falls back to BM25 FTS. See
+[Learned-sparse retrieval](configuration.md#learned-sparse-retrieval-qdrant).
+
 ---
 
 ## Embedding models

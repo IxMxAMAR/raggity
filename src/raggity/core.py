@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import threading
 
@@ -18,6 +19,8 @@ from .registry import resolve
 from .observability import init_tracing, span
 
 _GRAPH_JSON = "graph.json"
+
+log = logging.getLogger("raggity.core")
 
 # Sentinel for un-built lazy component slots.  A dedicated object (not ``None``)
 # so that legitimately-``None`` components (e.g. a disabled reranker) are cached
@@ -102,6 +105,12 @@ class Raggity:
     def store(self):
         def _factory():
             store_cls = resolve("store", self.cfg.index.backend)
+            sparse = getattr(self.cfg.retrieval, "sparse", "bm25")
+            if self.cfg.index.backend != "qdrant" and sparse != "bm25":
+                log.warning(
+                    "LanceDB has no sparse-vector index; falling back to BM25 FTS "
+                    "(retrieval.sparse=%r is ignored for backend=%s).",
+                    sparse, self.cfg.index.backend)
             # Pass dim as a callable so an existing index opens without building
             # the embedder just to learn its dimension.
             return store_cls.from_config(self.cfg, lambda: self.embedder.dim)
@@ -114,11 +123,19 @@ class Raggity:
                 return None
             if self._shared is not None:
                 return self._shared.reranker
-            if self.cfg.retrieval.rerank_backend == "colbert":
+            backend = self.cfg.retrieval.rerank_backend
+            if backend == "colbert":
                 from .reranker import ColbertReranker
                 return ColbertReranker(model_name=self.cfg.retrieval.colbert_model)
-            from .reranker import FastEmbedReranker
-            return FastEmbedReranker(model_name=self.cfg.retrieval.rerank_model)
+            if backend in ("cross-encoder", "fastembed"):
+                from .reranker import FastEmbedReranker
+                return FastEmbedReranker(model_name=self.cfg.retrieval.rerank_model)
+            # Custom reranker via dotted import path "package.module:Class".
+            # Contract: cls(model_name=...) with rerank(query, chunks) -> chunks
+            # (scored, sorted desc).  See docs/reference/configuration.md.
+            from .registry import import_dotted
+            cls = import_dotted(backend)
+            return cls(model_name=self.cfg.retrieval.rerank_model)
         return self._lazy("_reranker", _factory)
 
     @property
@@ -211,6 +228,13 @@ class Raggity:
         # flipping the flag in EITHER direction changes the fingerprint.
         if rc.contextual:
             fp += "|ctx=1"
+        # Learned-sparse retrieval changes what is stored at upsert time (named
+        # sparse vectors) and how text_search ranks, so toggling it must rebuild
+        # the index.  Qdrant-only (LanceDB ignores sparse and falls back to
+        # BM25), and appended ONLY when non-default so the fingerprint stays
+        # byte-identical for the common bm25/lancedb case.
+        if self.cfg.index.backend == "qdrant" and getattr(rc, "sparse", "bm25") != "bm25":
+            fp += f"|sparse={rc.sparse}"
         return fp
 
     def _fingerprint(self) -> str:

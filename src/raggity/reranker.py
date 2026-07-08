@@ -86,4 +86,5 @@ class ColbertReranker(Reranker):
 
 
 register("reranker", "fastembed", "raggity.reranker:FastEmbedReranker")
+register("reranker", "cross-encoder", "raggity.reranker:FastEmbedReranker")
 register("reranker", "colbert", "raggity.reranker:ColbertReranker")
