@@ -58,6 +58,12 @@ class RetrievalConfig(BaseModel):
     graph: bool = False
     graph_hops: int = 1
     graph_concurrency: int = 8
+    # CRAG-style corrective retrieval (opt-in). When true, after the first
+    # retrieval a lightweight LLM evaluator grades whether the retrieved passages
+    # can answer the question; on "incorrect"/"ambiguous" it runs ONE corrective
+    # round (query rewrite + re-retrieve + merge/rerank). Off by default.
+    # Cost: +1 LLM call per question, +1 more (rewrite) when a round triggers.
+    corrective: bool = False
 
     @field_validator("rerank_backend")
     @classmethod

@@ -202,6 +202,27 @@ The graph is saved to `<index.path>/graph.json` and loaded automatically on star
 
 ---
 
+## Corrective retrieval (CRAG-style)
+
+Corrective retrieval adds a lightweight self-check after the first retrieval, following the CRAG pattern (a retrieval evaluator plus one corrective round). When enabled, raggity:
+
+1. **Evaluates** the retrieved passages with one LLM call, grading them `correct`, `incorrect`, or `ambiguous` for the question.
+2. On `incorrect`/`ambiguous`, runs **exactly one corrective round**: it rewrites the query toward the missing information (one LLM call), re-retrieves with `[original, rewritten]` (the original stays in the RRF fusion), then merges the new chunks with the first round (dedup by chunk id, rerank if enabled, reslice to `top_k`, lost-in-the-middle order).
+3. On `correct`, proceeds unchanged.
+
+If the first retrieval abstained (no chunks), the corrective round still gets its one rewrite-and-retrieve shot; if that also comes back empty, raggity abstains as usual.
+
+**Corrective retrieval is off by default.** Enable in `raggity.toml`:
+
+```toml
+[retrieval]
+corrective = true
+```
+
+**Cost:** +1 LLM call per question for the evaluator, and +1 more (the rewrite) whenever a corrective round is triggered. The evaluator verdict is cached in the answer cache (keyed on question + retrieved chunk ids + model) when `generation.cache = true`, so a repeat of the same question over the same retrieval skips the evaluator call. Evaluator or rewriter LLM failures log a warning and fall back to the original chunks — corrective never degrades below non-corrective behavior.
+
+---
+
 ## Semantic answer cache
 
 When enabled, raggity stores answers in `<index.path>/answer_cache.json`, keyed on SHA-256 of the question + retrieved chunk IDs + model name. Cache hits return immediately with no LLM call.
@@ -243,3 +264,4 @@ rag ask "..." --no-cache
 | `expand_n` | `3` | Query variations for `--expand` |
 | `graph` | `false` | Enable GraphRAG |
 | `graph_hops` | `1` | BFS hops in the knowledge graph |
+| `corrective` | `false` | Enable CRAG-style corrective retrieval (evaluator + one rewrite-and-merge round) |

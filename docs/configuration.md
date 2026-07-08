@@ -179,6 +179,7 @@ graph_hops = 1
 | `graph` | `false` | Enable GraphRAG knowledge-graph augmentation |
 | `graph_hops` | `1` | BFS hops from matched entities in the graph |
 | `graph_concurrency` | `8` | Concurrent LLM extraction calls during `rag graph-build` (lower it for strict-rate-limit backends) |
+| `corrective` | `false` | Enable CRAG-style corrective retrieval: a retrieval evaluator (+1 LLM call/question) plus one query-rewrite-and-merge round (+1 more when triggered) — see [Corrective retrieval](retrieval.md#corrective-retrieval-crag-style) |
 
 ### Heavy reranker
 

@@ -465,6 +465,82 @@ class Raggity:
             queries.append(step_text)
         return queries
 
+    async def _apply_corrective(self, question: str, chunks: list,
+                                use_cache: bool) -> list:
+        """CRAG-style corrective retrieval (opt-in via ``retrieval.corrective``).
+
+        Grades the first-round *chunks* with a lightweight LLM evaluator; on a
+        ``"incorrect"``/``"ambiguous"`` verdict runs EXACTLY ONE corrective round
+        (query rewrite → re-retrieve with ``[question, rewritten]`` so the
+        original stays in the RRF fusion → merge/dedup/rerank/reslice to top_k →
+        lost-in-middle order).  An empty first retrieval is treated as needing
+        correction and still gets its one rewrite-and-retrieve shot.
+
+        Evaluator or rewriter LLM failure logs a warning and returns the original
+        chunks unchanged — corrective never degrades below non-corrective output.
+        """
+        if not self.cfg.retrieval.corrective:
+            return chunks
+        import hashlib
+        import logging as _logging
+        from .query_transform import evaluate_retrieval, rewrite_query
+        _log = _logging.getLogger("raggity.core")
+
+        # Grade the current retrieval. An empty first retrieval skips the LLM
+        # evaluator (there is nothing to grade) and goes straight to one
+        # corrective shot.
+        if chunks:
+            chunk_hash = hashlib.sha256(
+                "|".join(sorted(c.chunk_id for c in chunks)).encode()
+            ).hexdigest()[:16]
+            cache_q = f"{question}|{chunk_hash}"
+
+            async def _compute():
+                return {"verdict": await evaluate_retrieval(
+                    question, chunks, self.provider)}
+
+            try:
+                payload = await self._cached_transform(
+                    "crag", cache_q, 0, use_cache, _compute)
+                verdict = payload.get("verdict", "ambiguous")
+            except Exception as exc:
+                _log.warning(
+                    "corrective evaluator failed, keeping original chunks: %s", exc)
+                return chunks
+        else:
+            verdict = "incorrect"
+
+        with span("corrective", verdict=verdict):
+            if verdict == "correct":
+                return chunks
+            try:
+                rewritten = await rewrite_query(question, self.provider)
+            except Exception as exc:
+                _log.warning(
+                    "corrective rewrite failed, keeping original chunks: %s", exc)
+                return chunks
+            queries = [question]
+            if rewritten and rewritten != question:
+                queries.append(rewritten)
+            new_chunks = await asyncio.to_thread(
+                self.retriever.retrieve_multi, queries, question)
+            return self._merge_corrective(question, chunks, new_chunks)
+
+    def _merge_corrective(self, question: str, first: list, second: list) -> list:
+        """Merge first- and second-round chunks: dedup by chunk_id, rerank (if
+        enabled) or sort by score, reslice to top_k, lost-in-middle order."""
+        from .retriever import order_lost_in_middle
+        merged: dict[str, object] = {}
+        for c in first + second:
+            merged.setdefault(c.chunk_id, c)
+        pool = list(merged.values())
+        if self.cfg.retrieval.rerank and self.reranker is not None:
+            pool = self.reranker.rerank(question, pool)
+        else:
+            pool = sorted(pool, key=lambda c: c.score, reverse=True)
+        pool = pool[: self.cfg.retrieval.top_k]
+        return order_lost_in_middle(pool)
+
     def ask(self, question: str, expand: bool | None = None,
             hyde: bool | None = None, step_back: bool | None = None,
             use_cache: bool | None = None) -> Answer:
@@ -488,6 +564,7 @@ class Raggity:
                 chunks = await asyncio.to_thread(
                     self.retriever.retrieve_multi, queries, question,
                     graph_chunk_ids=graph_ids or None)
+        chunks = await self._apply_corrective(question, chunks, use_cache)
         if use_cache:
             from . import cache as _cache
             # Key on the EFFECTIVE system prompt (persona-included) so toggling
@@ -551,6 +628,7 @@ class Raggity:
             chunks = await asyncio.to_thread(
                 self.retriever.retrieve_multi, queries, question,
                 graph_chunk_ids=graph_ids or None)
+        chunks = await self._apply_corrective(question, chunks, use_cache)
         async for piece in self.answerer.answer_stream(question, chunks):
             yield piece
 

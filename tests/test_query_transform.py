@@ -80,3 +80,36 @@ async def test_decompose_returns_subquestions(monkeypatch):
     from raggity.query_transform import decompose_question
     out = await decompose_question("explain the backup setup", n=3, provider=ClaudeProvider())
     assert len(out) == 3 and "How often do backups run?" in out
+
+
+import pytest
+from raggity.models import Chunk
+
+
+@pytest.mark.parametrize("reply,expected", [
+    ("correct", "correct"),
+    ("incorrect", "incorrect"),         # must NOT be read as "correct" substring
+    ("ambiguous", "ambiguous"),
+    ("Correct.", "correct"),            # punctuation/case tolerant
+    ("The passages are INCORRECT", "incorrect"),
+    ("banana", "ambiguous"),            # unrecognised -> ambiguous
+])
+async def test_evaluate_retrieval_lenient_parse(monkeypatch, reply, expected):
+    async def _fq(prompt, options):
+        yield _AM(reply)
+    monkeypatch.setattr(llm_mod, "query", _fq)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
+    from raggity.query_transform import evaluate_retrieval
+    chunks = [Chunk("some passage", "a.md", "A", "A", 0, "c1", score=0.6)]
+    out = await evaluate_retrieval("how are backups done?", chunks, ClaudeProvider())
+    assert out == expected
+
+
+async def test_rewrite_query_returns_stripped_line(monkeypatch):
+    async def _fq(prompt, options):
+        yield _AM("  NAS backup schedule and retention  ")
+    monkeypatch.setattr(llm_mod, "query", _fq)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AM)
+    from raggity.query_transform import rewrite_query
+    out = await rewrite_query("how are backups done?", ClaudeProvider())
+    assert out == "NAS backup schedule and retention"
