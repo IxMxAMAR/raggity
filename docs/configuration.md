@@ -10,6 +10,39 @@ cp raggity.example.toml raggity.toml
 
 ---
 
+## Profiles
+
+```toml
+profile = "low-ram"
+```
+
+A top-level `profile` key selects a named preset. `""` (default) applies no
+preset — every field below is governed individually. `"low-ram"` **hard-overrides**
+the fields in the table below, even if the same `raggity.toml` also sets those
+fields explicitly (the profile always wins). Any other value raises a
+validation error naming the valid choices.
+
+| Field | Forced value |
+|---|---|
+| `index.backend` | `"lancedb"` (embedded — no external vector server to run) |
+| `embedding.model` | `"BAAI/bge-small-en-v1.5"` (smallest shipped default) |
+| `embedding.cache` | `false` |
+| `retrieval.rerank` | `false` (skips loading the cross-encoder model — the biggest RAM save) |
+| `retrieval.graph` | `false` |
+| `generation.cache` | `false` |
+| `server.max_sessions` | `100` |
+| `server.max_user_rags` | `4` |
+
+`rag doctor` prints an info line when a profile is active, e.g.:
+
+```
+[--] profile: low-ram (rerank/graph/caches off, embedded lancedb)
+```
+
+**Measured serve RSS ceiling:** _measured at release_
+
+---
+
 ## `[sources]`
 
 ```toml

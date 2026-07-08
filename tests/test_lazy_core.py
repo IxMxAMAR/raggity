@@ -168,3 +168,20 @@ def test_noop_ingest_builds_neither_embedder_nor_store(tmp_path):
     assert report2.unchanged == 1 and report2.added == 0
     assert fresh._raw_embedder is _UNSET, "no-op ingest must not build the embedder"
     assert fresh._store is _UNSET, "no-op ingest must not open the store"
+
+
+# --- profile="low-ram" reranker slot ------------------------------------
+
+def test_low_ram_profile_reranker_is_none_and_never_built(tmp_path):
+    """low-ram forces retrieval.rerank=False; the reranker slot must resolve to
+    None without ever importing/constructing FastEmbedReranker (status()/retrieve
+    path stays light)."""
+    cfg = RaggityConfig(profile="low-ram", index=IndexConfig(path=str(tmp_path / "idx")))
+    rag = Raggity(cfg)
+    assert rag.cfg.retrieval.rerank is False
+    assert rag.reranker is None
+    assert rag._reranker is None, "reranker slot resolves to None, not left _UNSET"
+
+    st = rag.status()
+    assert st["chunks"] == 0
+    assert rag._raw_embedder is _UNSET, "status must not build the embedder"

@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from raggity.config import RaggityConfig, load_config
 
 
@@ -78,3 +81,67 @@ def test_relevance_floor_default_is_zero():
     from raggity.config import RetrievalConfig
     r = RetrievalConfig()
     assert r.relevance_floor == 0.0
+
+
+# ---------------------------------------------------------------------------
+# profile = "low-ram"
+# ---------------------------------------------------------------------------
+
+def test_profile_defaults_to_empty():
+    assert RaggityConfig().profile == ""
+
+
+def test_profile_empty_is_byte_identical_to_defaults():
+    """profile="" must not touch any other field (defaults path unchanged)."""
+    plain = RaggityConfig()
+    explicit = RaggityConfig(profile="")
+    assert explicit.model_dump() == plain.model_dump()
+
+
+def test_profile_low_ram_forces_expected_fields():
+    cfg = RaggityConfig(profile="low-ram")
+    assert cfg.index.backend == "lancedb"
+    assert cfg.embedding.model == "BAAI/bge-small-en-v1.5"
+    assert cfg.embedding.cache is False
+    assert cfg.retrieval.rerank is False
+    assert cfg.retrieval.graph is False
+    assert cfg.generation.cache is False
+    assert cfg.server.max_sessions == 100
+    assert cfg.server.max_user_rags == 4
+
+
+def test_profile_low_ram_overrides_conflicting_explicit_values():
+    """profile wins over per-field values set in the SAME config, even when they conflict."""
+    data = {
+        "profile": "low-ram",
+        "index": {"backend": "qdrant"},
+        "embedding": {"model": "some/other-model", "cache": True},
+        "retrieval": {"rerank": True, "graph": True},
+        "generation": {"cache": True},
+        "server": {"max_sessions": 5000, "max_user_rags": 999},
+    }
+    cfg = RaggityConfig.model_validate(data)
+    assert cfg.index.backend == "lancedb"
+    assert cfg.embedding.model == "BAAI/bge-small-en-v1.5"
+    assert cfg.embedding.cache is False
+    assert cfg.retrieval.rerank is False
+    assert cfg.retrieval.graph is False
+    assert cfg.generation.cache is False
+    assert cfg.server.max_sessions == 100
+    assert cfg.server.max_user_rags == 4
+
+
+def test_profile_invalid_raises_validation_error_naming_choices():
+    with pytest.raises(ValidationError) as excinfo:
+        RaggityConfig(profile="ultra-fast")
+    msg = str(excinfo.value)
+    assert "ultra-fast" in msg
+    assert "low-ram" in msg
+
+
+def test_profile_loaded_from_toml(tmp_path):
+    p = tmp_path / "raggity.toml"
+    p.write_text('profile = "low-ram"\n')
+    cfg = load_config(str(p))
+    assert cfg.profile == "low-ram"
+    assert cfg.retrieval.rerank is False

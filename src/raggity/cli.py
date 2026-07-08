@@ -52,6 +52,8 @@ _INIT_TEMPLATE = """\
 # raggity.toml - configuration for raggity
 # Edit [sources] then run: rag ingest
 
+# profile = "low-ram"  # minimize RAM: embedded lancedb, no rerank/graph/caches, capped sessions
+
 [sources]
 # Glob patterns for files to index. Supports **, *, and ~ expansion.
 include = [

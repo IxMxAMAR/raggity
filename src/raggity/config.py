@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 
 import platformdirs
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class SourcesConfig(BaseModel):
@@ -102,7 +102,18 @@ class ObservabilityConfig(BaseModel):
     service_name: str = "raggity"
 
 
+# Valid values for the top-level `profile` preset. "" = no preset (default
+# behavior, every field governed individually).
+VALID_PROFILES: tuple[str, ...] = ("", "low-ram")
+
+
 class RaggityConfig(BaseModel):
+    # Named config preset. "low-ram" hard-overrides several fields below (see
+    # `_apply_profile`) to minimize resident memory: embedded lancedb, smallest
+    # shipped embedding model, no cross-encoder reranker, no graph expansion,
+    # no caches, and capped server session/tenant limits. Profile values win
+    # over any explicit per-field value set in the same config file.
+    profile: str = ""
     sources: SourcesConfig = Field(default_factory=SourcesConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
@@ -110,6 +121,32 @@ class RaggityConfig(BaseModel):
     index: IndexConfig = Field(default_factory=IndexConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
+
+    @field_validator("profile")
+    @classmethod
+    def _validate_profile(cls, v: str) -> str:
+        if v not in VALID_PROFILES:
+            choices = ", ".join(f'"{p}"' if p else '"" (none)' for p in VALID_PROFILES)
+            raise ValueError(f"invalid profile {v!r}; valid choices: {choices}")
+        return v
+
+    @model_validator(mode="after")
+    def _apply_profile(self) -> "RaggityConfig":
+        """Hard-override select fields when a named profile is active.
+
+        Documented semantics: the profile ALWAYS wins, even over conflicting
+        values explicitly set for the same field in the same config file.
+        """
+        if self.profile == "low-ram":
+            self.index.backend = "lancedb"
+            self.embedding.model = "BAAI/bge-small-en-v1.5"
+            self.embedding.cache = False
+            self.retrieval.rerank = False
+            self.retrieval.graph = False
+            self.generation.cache = False
+            self.server.max_sessions = 100
+            self.server.max_user_rags = 4
+        return self
 
 
 def _find_config_path(explicit: str | None) -> Path | None:

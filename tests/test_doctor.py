@@ -153,3 +153,35 @@ def test_check_generation_external_never_calls_ensure_running(monkeypatch):
     monkeypatch.setattr(providers, "external_ready", lambda *a, **k: True)
     doc.check_generation(_external_cfg())
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# check_profile / profile row in `rag doctor`
+# ---------------------------------------------------------------------------
+
+def test_check_profile_empty_yields_no_row():
+    assert doc.check_profile(RaggityConfig()) == []
+
+
+def test_check_profile_low_ram_yields_info_row():
+    rows = doc.check_profile(RaggityConfig(profile="low-ram"))
+    assert len(rows) == 1
+    label, status, detail, hint = rows[0]
+    assert label == "profile"
+    assert status == doc.INFO
+    assert "low-ram" in detail
+    assert "rerank" in detail
+    assert "graph" in detail
+    assert "lancedb" in detail
+
+
+def test_doctor_shows_profile_line_when_set(monkeypatch):
+    from raggity import config as cfgmod
+    monkeypatch.setattr(cfgmod, "load_config", lambda p: RaggityConfig(profile="low-ram"))
+    code, out = _run(monkeypatch)
+    assert "profile: low-ram" in out
+
+
+def test_doctor_no_profile_row_when_unset(monkeypatch):
+    code, out = _run(monkeypatch)
+    assert "profile:" not in out

@@ -313,6 +313,10 @@ def test_init_creates_toml(tmp_path, monkeypatch):
     assert "[generation]" in content
     # Next-steps guidance printed
     assert "rag ingest" in r.output
+    # profile preset documented as a commented-out line (parses fine as-is)
+    assert '# profile = "low-ram"' in content
+    import tomllib
+    tomllib.loads(content)
 
 
 def test_init_refuses_to_overwrite(tmp_path, monkeypatch):

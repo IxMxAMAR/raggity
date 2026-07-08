@@ -147,6 +147,16 @@ def check_generation(cfg) -> tuple[str, str, str]:
     return (WARN, f"backend={backend!r} unrecognized", "expected claude|openai|ollama|external")
 
 
+def check_profile(cfg) -> list[tuple[str, str, str, str]]:
+    """Report the active config `profile` preset, if any (empty list = unset)."""
+    if cfg.profile == "low-ram":
+        return [(
+            "profile", INFO,
+            "low-ram (rerank/graph/caches off, embedded lancedb)", "",
+        )]
+    return []
+
+
 def check_index_writable(cfg) -> tuple[str, str, str]:
     path = cfg.index.path
     try:
@@ -210,6 +220,7 @@ def run_doctor(config, console) -> int:
     rows: list[tuple[str, str, str, str]] = []
     rows.append(("version", *check_version()))
     rows.append(("config", *check_config(cfg_path)))
+    rows.extend(check_profile(cfg))
     rows.append(("sources", *check_sources(cfg)))
     rows.append(("index", *check_index(cfg)))
     rows.append(("embedding", *check_embedding(cfg)))
