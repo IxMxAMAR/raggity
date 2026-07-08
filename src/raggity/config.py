@@ -85,6 +85,12 @@ class GenerationConfig(BaseModel):
     # When true, tells the model the knowledge base belongs to the current user
     # (first-person docs/questions refer to them).  Grounding rules still bind.
     personal_kb: bool = False
+    # Rolling conversation-summary memory (see Conversation.maybe_summarize).
+    # When a chat's turn count exceeds this, the oldest turns are compressed
+    # into a rolling summary via one provider call and dropped from the turn
+    # list; the most-recent memory_max_turns//2 turns are kept verbatim.
+    # 0 disables summarization entirely (pure fixed-window behavior).
+    memory_max_turns: int = 20
 
 
 class IndexConfig(BaseModel):

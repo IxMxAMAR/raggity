@@ -460,22 +460,17 @@ def chat(config: str = typer.Option(None, "--config")):
             console.print("[dim]Bye![/dim]")
             break
         async def _stream_chat():
-            # Build retrieval query from conversation history
-            retrieval_q = conversation.retrieval_query(question)
-            chunks = rag.retriever.retrieve(retrieval_q)
-            history = conversation.recent(6) or None
-            parts: list[str] = []
+            # rag.achat_stream handles history-aware retrieval, conversation
+            # turn recording, and rolling-summary memory once the window
+            # overflows (generation.memory_max_turns).
             final = None
             console.print("[cyan]raggity:[/cyan] ", end="")
-            async for piece in rag.answerer.answer_stream(question, chunks, history=history):
+            async for piece in rag.achat_stream(conversation, question):
                 if isinstance(piece, str):
                     print(piece, end="", flush=True)
-                    parts.append(piece)
                 else:
                     final = piece
             print()
-            conversation.add("user", question)
-            conversation.add("assistant", "".join(parts).strip())
             return final
 
         answer = _run_async(_stream_chat())
@@ -528,10 +523,18 @@ def eval_cmd(golden: str = typer.Argument(...),
         console.print(f"Faithfulness={res.faithfulness:.3f}  "
                       f"AnswerRelevance={res.answer_relevance:.3f}  (n={res.n})")
         console.print("(note: self-assessed - same model family generates and grades)")
+        if res.rejection_rate is not None:
+            console.print(f"RejectionRate={res.rejection_rate:.3f}  "
+                          f"FalseAnswerRate={res.false_answer_rate:.3f}  "
+                          "(unanswerable goldens - hallucination resistance)")
     else:
         res = evaluate(rag.retriever, load_golden(golden), k=k)
         console.print(f"Hit@{k}={res.hit_rate:.3f}  MRR={res.mrr:.3f}  "
                       f"Recall@{k}={res.recall:.3f}  (n={res.n})")
+        if res.unanswerable_total > 0:
+            console.print(f"Unanswerable={res.unanswerable_total} "
+                          "(excluded from retrieval metrics above; use --llm-judge "
+                          "for rejection_rate/false_answer_rate)")
 
 
 @app.command()

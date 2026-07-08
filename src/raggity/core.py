@@ -567,11 +567,22 @@ class Raggity:
                 graph_chunk_ids=graph_ids)
         else:
             chunks = await asyncio.to_thread(self.retriever.retrieve, retrieval_q)
-        history = conversation.recent(6)
+        history = self._history_with_summary(conversation)
         answer = await self.answerer.answer(question, chunks, history=history or None)
         conversation.add("user", question)
         conversation.add("assistant", answer.text)
+        if self.cfg.generation.memory_max_turns > 0:
+            await conversation.maybe_summarize(self.provider, self.cfg.generation.memory_max_turns)
         return answer
+
+    @staticmethod
+    def _history_with_summary(conversation: Conversation) -> list[tuple[str, str]]:
+        """Return the 6-turn recent window, prefixed with a synthetic ``"summary"``
+        entry when the conversation has accumulated a rolling summary."""
+        history = conversation.recent(6)
+        if conversation.summary:
+            return [("summary", conversation.summary), *history]
+        return history
 
     async def achat_stream(self, conversation: Conversation, question: str):
         """Stream a multi-turn chat answer: yield text deltas, then the final Answer.
@@ -590,7 +601,7 @@ class Raggity:
                 graph_chunk_ids=graph_ids)
         else:
             chunks = await asyncio.to_thread(self.retriever.retrieve, retrieval_q)
-        history = conversation.recent(6)
+        history = self._history_with_summary(conversation)
         final: Answer | None = None
         async for piece in self.answerer.answer_stream(
                 question, chunks, history=history or None):
@@ -601,6 +612,9 @@ class Raggity:
         if final is not None:
             conversation.add("user", question)
             conversation.add("assistant", final.text)
+            if self.cfg.generation.memory_max_turns > 0:
+                await conversation.maybe_summarize(
+                    self.provider, self.cfg.generation.memory_max_turns)
             yield final
 
     def chat(self, conversation: Conversation, question: str) -> Answer:

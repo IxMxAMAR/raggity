@@ -128,3 +128,106 @@ def test_build_user_prompt_history_comes_before_context():
     conv_pos = p.index("CONVERSATION SO FAR")
     ctx_pos = p.index("CONTEXT")
     assert conv_pos < ctx_pos, "history block must precede CONTEXT block"
+
+
+def test_build_user_prompt_renders_summary_role_as_leading_line():
+    """A ('summary', text) history entry renders as a synthetic leading line,
+    not the raw 'summary: ...' role rendering used for user/assistant."""
+    from raggity.prompts import build_user_prompt
+    from raggity.models import Chunk
+    ch = Chunk(text="x", source_path="a.md", title="A", heading_path="A",
+               ordinal=0, chunk_id="c1000000")
+    history = [("summary", "Earlier they discussed GPUs."), ("user", "and the dev box?")]
+    p = build_user_prompt("follow up?", [ch], history=history)
+    assert "Earlier conversation summary: Earlier they discussed GPUs." in p
+    assert "user: and the dev box?" in p
+    lines = p.splitlines()
+    assert "summary: Earlier they discussed GPUs." not in lines
+
+
+# ---------------------------------------------------------------------------
+# Task 6b: rolling conversation-summary memory (maybe_summarize)
+# ---------------------------------------------------------------------------
+
+import asyncio
+
+
+class _FakeSummaryProvider:
+    def __init__(self, response: str = "A summary."):
+        self.response = response
+        self.calls: list[tuple[str, str]] = []
+
+    async def complete(self, system: str, prompt: str) -> str:
+        self.calls.append((system, prompt))
+        return self.response
+
+
+def _fill(c: Conversation, n: int) -> None:
+    for i in range(n):
+        c.add("user" if i % 2 == 0 else "assistant", f"t{i}")
+
+
+def test_maybe_summarize_below_threshold_no_provider_call():
+    c = Conversation()
+    _fill(c, 4)
+    prov = _FakeSummaryProvider()
+    asyncio.run(c.maybe_summarize(prov, 4))  # 4 turns, max_turns=4: not yet over
+    assert prov.calls == []
+    assert len(c.turns) == 4
+    assert c.summary == ""
+
+
+def test_maybe_summarize_crossing_threshold_one_call_drops_old_turns():
+    c = Conversation()
+    _fill(c, 5)  # exceeds max_turns=4
+    prov = _FakeSummaryProvider("Discussed backups and GPUs.")
+    asyncio.run(c.maybe_summarize(prov, 4))
+    assert len(prov.calls) == 1
+    assert c.summary == "Discussed backups and GPUs."
+    # keep = max_turns // 2 = 2 most-recent turns retained
+    assert c.turns == [("assistant", "t3"), ("user", "t4")]
+
+
+def test_maybe_summarize_second_crossing_merges_prompt_contains_old_summary():
+    c = Conversation()
+    c.summary = "Earlier: discussed GPUs."
+    _fill(c, 5)
+    prov = _FakeSummaryProvider("Merged: GPUs then backups.")
+    asyncio.run(c.maybe_summarize(prov, 4))
+    assert len(prov.calls) == 1
+    _system, prompt = prov.calls[0]
+    assert "Earlier: discussed GPUs." in prompt  # old summary folded into the provider call
+    assert c.summary == "Merged: GPUs then backups."
+    assert len(c.turns) == 2
+
+
+def test_maybe_summarize_provider_failure_falls_back_to_truncation():
+    c = Conversation()
+    _fill(c, 5)
+
+    class _RaisingProvider:
+        async def complete(self, system, prompt):
+            raise RuntimeError("provider unavailable")
+
+    asyncio.run(c.maybe_summarize(_RaisingProvider(), 4))  # must not raise
+    assert c.summary == ""  # left unchanged since the call never succeeded
+    assert len(c.turns) == 2  # still truncated to the recent window
+
+
+def test_maybe_summarize_zero_max_turns_never_summarizes():
+    c = Conversation()
+    _fill(c, 50)
+    prov = _FakeSummaryProvider()
+    asyncio.run(c.maybe_summarize(prov, 0))
+    assert prov.calls == []
+    assert len(c.turns) == 50
+    assert c.summary == ""
+
+
+def test_maybe_summarize_recent_window_intact_after_summarization():
+    """The most-recent turns kept after summarization must equal recent(keep)."""
+    c = Conversation()
+    _fill(c, 9)
+    prov = _FakeSummaryProvider("Summary.")
+    asyncio.run(c.maybe_summarize(prov, 6))  # keep = 3
+    assert c.turns == [("user", "t6"), ("assistant", "t7"), ("user", "t8")]

@@ -67,6 +67,21 @@ All commands accept `--config PATH` to point at a non-default config file.
 
 ---
 
+## Evaluation
+
+`golden.jsonl` rows are one JSON object per line:
+
+```jsonl
+{"question": "how are backups done?", "relevant_source_paths": ["ops/backups.md"]}
+{"question": "what colour is the CEO's car?", "answerable": false}
+```
+
+- `question` (required) — the eval query.
+- `relevant_source_paths` — source paths that should be retrieved (used by `rag eval`'s Hit@k/MRR/Recall@k).
+- `answerable` (optional, default `true`) — set to `false` for a row that has **no** correct answer in your knowledge base at all. Correct behavior for such a row is abstention, not a guess.
+
+Unanswerable rows measure **hallucination resistance** (a CRAG/RGB-style rejection test): does the system correctly refuse to answer when nothing in the index supports an answer, rather than confabulating one? They carry no `relevant_source_paths` and are excluded from Hit@k/MRR/Recall@k (reported separately as `Unanswerable=<n>`); run `rag eval --llm-judge` to get `RejectionRate` (abstained correctly / unanswerable count) and `FalseAnswerRate` (answered anyway) over them.
+
 ## Next steps
 
 - [Configuration reference](configuration.md) — all `raggity.toml` knobs

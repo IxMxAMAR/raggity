@@ -88,7 +88,13 @@ def build_user_prompt(
 ) -> str:
     prefix = ""
     if history:
-        lines = "\n".join(f"{role}: {text}" for role, text in history)
+        rendered = []
+        for role, text in history:
+            if role == "summary":
+                rendered.append(f"Earlier conversation summary: {text}")
+            else:
+                rendered.append(f"{role}: {text}")
+        lines = "\n".join(rendered)
         prefix = f"CONVERSATION SO FAR:\n{lines}\n\n"
     return (
         f"{prefix}"

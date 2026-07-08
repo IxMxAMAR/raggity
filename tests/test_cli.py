@@ -178,6 +178,52 @@ def test_ask_decompose_overrides_other_transforms(tmp_path, monkeypatch):
     assert "overrides" in r.output
 
 
+def test_eval_cmd_prints_unanswerable_count(tmp_path):
+    """rag eval prints Unanswerable=<n> when the golden set has answerable=false rows."""
+    cfg = _make_config(tmp_path)
+    runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
+    golden = tmp_path / "golden.jsonl"
+    golden.write_text(
+        '{"question": "how are backups done?", "relevant_source_paths": ["a.md"]}\n'
+        '{"question": "what colour is the CEO\'s car?", "answerable": false}\n'
+    )
+    r = runner.invoke(cli_mod.app, ["eval", str(golden), "--config", cfg])
+    assert r.exit_code == 0
+    assert "Unanswerable=1" in r.output
+
+
+def test_eval_cmd_no_unanswerable_rows_omits_new_line(tmp_path):
+    cfg = _make_config(tmp_path)
+    runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
+    golden = tmp_path / "golden.jsonl"
+    golden.write_text('{"question": "how are backups done?", "relevant_source_paths": ["a.md"]}\n')
+    r = runner.invoke(cli_mod.app, ["eval", str(golden), "--config", cfg])
+    assert r.exit_code == 0
+    assert "Unanswerable=" not in r.output
+
+
+def test_eval_cmd_llm_judge_prints_rejection_rate(tmp_path, monkeypatch):
+    """rag eval --llm-judge prints RejectionRate/FalseAnswerRate when unanswerable rows exist."""
+    cfg = _make_config(tmp_path)
+    runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
+    golden = tmp_path / "golden.jsonl"
+    golden.write_text(
+        '{"question": "how are backups done?", "relevant_source_paths": ["a.md"]}\n'
+        '{"question": "what colour is the CEO\'s car?", "answerable": false}\n'
+    )
+
+    async def _fake_query(prompt, options):
+        yield _AssistantMessage(
+            "I don't have enough information in your knowledge base to answer that.")
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    r = runner.invoke(cli_mod.app, ["eval", str(golden), "--config", cfg, "--llm-judge"])
+    assert r.exit_code == 0
+    assert "RejectionRate=1.000" in r.output
+    assert "FalseAnswerRate=0.000" in r.output
+
+
 def test_graph_build_exits_1_when_graph_off(tmp_path):
     """graph-build fails with exit code 1 when retrieval.graph=false (default)."""
     cfg = _make_config(tmp_path)

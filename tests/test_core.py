@@ -547,6 +547,86 @@ def test_achat_stream_disconnect_records_no_turns(tmp_path, monkeypatch):
     assert conv.turns == []  # no half-turn recorded on mid-stream disconnect
 
 
+# ---------------------------------------------------------------------------
+# v0.11.0 Task 6b: achat wires Conversation.maybe_summarize via memory_max_turns
+# ---------------------------------------------------------------------------
+
+async def test_achat_triggers_summarization_past_memory_max_turns(tmp_path, monkeypatch):
+    """achat calls maybe_summarize after appending turns; once the turn count
+    exceeds generation.memory_max_turns, exactly one summarize call fires, the
+    oldest turns are dropped, and the recent window stays intact."""
+    from raggity.config import GenerationConfig
+
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+        generation=GenerationConfig(memory_max_turns=2),
+    )
+
+    summarize_calls = []
+
+    async def _fake_query(prompt, options):
+        if "CONVERSATION EXCERPT" in prompt or "EXISTING SUMMARY" in prompt:
+            summarize_calls.append(prompt)
+            yield _AssistantMessage("Discussed backups.")
+        else:
+            yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    from raggity.core import Raggity
+    from raggity.conversation import Conversation
+    rag = Raggity(cfg); rag.ingest()
+    conv = Conversation()
+
+    await rag.achat(conv, "how are backups done?")  # 2 turns: not yet over threshold
+    assert summarize_calls == []
+    assert conv.summary == ""
+
+    await rag.achat(conv, "where exactly?")  # 4 turns > 2 -> triggers summarization
+    assert len(summarize_calls) == 1
+    assert conv.summary != ""
+    assert len(conv.turns) == 1  # keep = memory_max_turns // 2 = 1
+
+
+async def test_achat_memory_max_turns_zero_never_summarizes(tmp_path, monkeypatch):
+    """memory_max_turns=0 disables summarization; achat never calls the provider for it."""
+    from raggity.config import GenerationConfig
+
+    notes = tmp_path / "notes"; notes.mkdir()
+    (notes / "a.md").write_text("# A\n\nbackups run nightly to the NAS")
+    cfg = RaggityConfig(
+        sources=SourcesConfig(include=[str(notes / "*.md")]),
+        index=IndexConfig(path=str(tmp_path / "idx")),
+        generation=GenerationConfig(memory_max_turns=0),
+    )
+
+    summarize_calls = []
+
+    async def _fake_query(prompt, options):
+        if "CONVERSATION EXCERPT" in prompt or "EXISTING SUMMARY" in prompt:
+            summarize_calls.append(prompt)
+        yield _AssistantMessage("Backups run nightly to the NAS [doc_1#00000000].")
+
+    monkeypatch.setattr(llm_mod, "query", _fake_query)
+    monkeypatch.setattr(llm_mod, "AssistantMessage", _AssistantMessage)
+
+    from raggity.core import Raggity
+    from raggity.conversation import Conversation
+    rag = Raggity(cfg); rag.ingest()
+    conv = Conversation()
+
+    for _ in range(5):
+        await rag.achat(conv, "how are backups done?")
+
+    assert summarize_calls == []
+    assert conv.summary == ""
+    assert len(conv.turns) == 10  # no summarization: turns keep accumulating
+
+
 def test_transform_cache_hit_skips_second_expand_call(tmp_path, monkeypatch):
     """With expand + cache on, a repeat question reuses the cached query expansion."""
     from raggity.config import RetrievalConfig

@@ -235,6 +235,10 @@ cache = false
 # Opt-in personalization (default off). See "Personalization" below.
 # persona = "The user is Dr. Vane, a cardiologist. Prefer clinical phrasing."
 # personal_kb = false
+
+# Rolling conversation-summary memory for rag chat / /chat sessions. See
+# "Conversation memory" below. 0 disables summarization.
+# memory_max_turns = 20
 ```
 
 | Key | Default | Description |
@@ -249,6 +253,7 @@ cache = false
 | `auto_start` | `true` | Auto-start a local backend (e.g. ollama) on first use when a runtime binary is found and the server is not already running |
 | `persona` | `""` | Free-form user context appended to the system prompt (grounding rules still bind). Empty = system prompt unchanged |
 | `personal_kb` | `false` | Treat the knowledge base as the current user's own (first-person docs/questions refer to them) |
+| `memory_max_turns` | `20` | Chat turn count above which the oldest turns are compressed into a rolling summary (see "Conversation memory" below). `0` disables summarization — chat falls back to the fixed 6-turn prompt window only |
 
 ### Personalization
 
@@ -259,6 +264,22 @@ followed by a reminder that the citation + abstention rules still apply — the
 model must still answer only from the retrieved context and cite every claim.
 Toggling either value changes the answer-cache key, so cached answers are
 invalidated automatically.
+
+### Conversation memory
+
+`rag chat` and server chat sessions always prompt the model with only the
+most-recent 6 turns (`Conversation.recent(6)`) — that window never grows.
+Beyond that, once a conversation accumulates more than `memory_max_turns`
+total turns, the oldest turns (everything beyond the most-recent
+`memory_max_turns // 2`) are compressed into a rolling summary via **one**
+LLM call and dropped from the turn list; the summary is carried forward and
+merged with on each subsequent overflow. The summary is injected as a
+synthetic leading line ("Earlier conversation summary: ...") in the prompt's
+conversation-so-far block, so long chats keep earlier context without an
+ever-growing prompt. If the summarization call fails, the oldest turns are
+still dropped (plain truncation) so the conversation stays bounded — the
+chat itself never raises. Set `memory_max_turns = 0` to disable
+summarization entirely (pure fixed-window behavior, the old default).
 
 ### Local providers: discovery & auto-start
 
