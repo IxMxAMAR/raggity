@@ -382,16 +382,30 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
         step_back: bool = typer.Option(False, "--step-back"),
         no_stream: bool = typer.Option(False, "--no-stream"),
         decompose: bool = typer.Option(False, "--decompose"),
+        agentic: bool = typer.Option(False, "--agentic"),
         no_cache: bool = typer.Option(False, "--no-cache")):
     """Ask a question against your knowledge base."""
     import asyncio
     if _check_no_config(config):
         raise typer.Exit(0)
+    if agentic and decompose:
+        typer.echo("error: --agentic and --decompose are mutually exclusive", err=True)
+        raise typer.Exit(1)
     rag = _rag(config)
     if rag.store.count() == 0:
         console.print(_EMPTY_KB_HINT)
         raise typer.Exit(0)
-    if decompose:
+    if agentic:
+        if expand or hyde or step_back:
+            typer.echo("note: --agentic overrides other query transforms", err=True)
+        typer.echo("Agentic retrieval (model orchestrates multiple searches, +model calls)...",
+                   err=True)
+        answer = rag.ask_agentic(question)
+        if plain:
+            typer.echo(answer.text)
+        else:
+            console.print(answer.text)
+    elif decompose:
         if expand or hyde or step_back:
             typer.echo("note: --decompose overrides other query transforms", err=True)
         typer.echo("Decomposing query (+model calls)...", err=True)

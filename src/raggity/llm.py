@@ -24,6 +24,11 @@ _ANTHROPIC_CRED_VARS = {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"}
 query = None
 ClaudeAgentOptions = None
 AssistantMessage = None
+# In-process SDK MCP tool support (used by agentic.py). Same guarded-globals
+# discipline as the symbols above: _ensure_sdk() only fills them when still None,
+# so a test that patches them stays intact.
+tool = None
+create_sdk_mcp_server = None
 # StreamEvent carries the SDK's incremental partial-message deltas. It is
 # feature-detected (older SDKs lack it): when unavailable it stays None and the
 # provider falls back to yielding the final AssistantMessage snapshot only —
@@ -38,6 +43,7 @@ def _ensure_sdk() -> None:
     module globals above are still unset (None). No-op if all are already bound
     (either by a prior real call, or by a test's monkeypatch)."""
     global query, ClaudeAgentOptions, AssistantMessage, StreamEvent, _stream_event_checked
+    global tool, create_sdk_mcp_server
     if query is None:
         from claude_agent_sdk import query as _query
         query = _query
@@ -47,6 +53,12 @@ def _ensure_sdk() -> None:
     if AssistantMessage is None:
         from claude_agent_sdk import AssistantMessage as _AssistantMessage
         AssistantMessage = _AssistantMessage
+    if tool is None:
+        from claude_agent_sdk import tool as _tool
+        tool = _tool
+    if create_sdk_mcp_server is None:
+        from claude_agent_sdk import create_sdk_mcp_server as _create_sdk_mcp_server
+        create_sdk_mcp_server = _create_sdk_mcp_server
     if StreamEvent is None and not _stream_event_checked:
         _stream_event_checked = True
         try:
@@ -54,6 +66,30 @@ def _ensure_sdk() -> None:
             StreamEvent = _StreamEvent
         except Exception:
             StreamEvent = None
+
+
+def base_options_kwargs(system: str, model: str, auth: str) -> dict:
+    """Shared ClaudeAgentOptions kwargs for any Claude call (single-shot or agentic).
+
+    Applies the subscription credential-strip and the api_key guard EXACTLY as
+    ``ClaudeProvider._options`` does, and sets the isolation defaults
+    (``permission_mode="dontAsk"``, ``setting_sources=[]``).  Callers add their
+    own ``allowed_tools`` / ``max_turns`` / ``mcp_servers`` on top.  The env logic
+    runs before any SDK import, so an api_key-without-key error surfaces without
+    touching claude_agent_sdk.
+    """
+    env = None
+    if auth == "subscription":
+        env = {k: v for k, v in os.environ.items()
+               if k not in _ANTHROPIC_CRED_VARS}
+    elif auth == "api_key" and not os.environ.get("ANTHROPIC_API_KEY"):
+        raise RuntimeError("auth='api_key' but ANTHROPIC_API_KEY is not set. "
+                           "Set the key or use auth='subscription' after `claude login`.")
+    kw = dict(system_prompt=system, model=model,
+              permission_mode="dontAsk", setting_sources=[])
+    if env is not None:
+        kw["env"] = env
+    return kw
 
 
 class LLMProvider(ABC):
@@ -72,20 +108,9 @@ class ClaudeProvider(LLMProvider):
         self.auth = auth
 
     def _options(self, system: str) -> ClaudeAgentOptions:
-        env = None
-        if self.auth == "subscription":
-            env = {k: v for k, v in os.environ.items()
-                   if k not in _ANTHROPIC_CRED_VARS}
-        elif self.auth == "api_key" and not os.environ.get("ANTHROPIC_API_KEY"):
-            raise RuntimeError("auth='api_key' but ANTHROPIC_API_KEY is not set. "
-                               "Set the key or use auth='subscription' after `claude login`.")
+        kw = base_options_kwargs(system, self.model, self.auth)
         _ensure_sdk()
-        kw = dict(system_prompt=system, model=self.model,
-                  allowed_tools=[], permission_mode="dontAsk",
-                  setting_sources=[], max_turns=1,
-                  include_partial_messages=True)
-        if env is not None:
-            kw["env"] = env
+        kw.update(allowed_tools=[], max_turns=1, include_partial_messages=True)
         return ClaudeAgentOptions(**kw)
 
     async def stream(self, system: str, prompt: str):

@@ -346,6 +346,35 @@ def test_ingest_no_config_file_shows_hint(tmp_path, monkeypatch):
     assert "rag init" in r.output
 
 
+def test_ask_agentic_invokes_ask_agentic(tmp_path, monkeypatch):
+    """CLI --agentic --plain should call rag.ask_agentic and print the answer."""
+    from raggity.models import Answer
+    cfg = _make_config(tmp_path)
+    runner.invoke(cli_mod.app, ["ingest", "--config", cfg])
+
+    calls = []
+
+    def _fake_ask_agentic(self, question):
+        calls.append(question)
+        return Answer(text="Backups run nightly to the NAS.", citations=[], abstained=False)
+
+    monkeypatch.setattr(cli_mod.Raggity, "ask_agentic", _fake_ask_agentic)
+    r = runner.invoke(cli_mod.app, ["ask", "how are backups done?", "--config", cfg,
+                                    "--plain", "--agentic"])
+    assert r.exit_code == 0
+    assert "NAS" in r.stdout
+    assert calls == ["how are backups done?"]
+
+
+def test_ask_agentic_conflicts_with_decompose(tmp_path):
+    """--agentic and --decompose together must error and exit 1."""
+    cfg = _make_config(tmp_path)
+    r = runner.invoke(cli_mod.app, ["ask", "q", "--config", cfg,
+                                    "--agentic", "--decompose"])
+    assert r.exit_code == 1
+    assert "mutually exclusive" in r.output
+
+
 def test_init_creates_toml(tmp_path, monkeypatch):
     """rag init writes a raggity.toml template when none exists."""
     monkeypatch.chdir(tmp_path)

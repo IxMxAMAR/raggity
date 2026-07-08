@@ -223,6 +223,23 @@ corrective = true
 
 ---
 
+## Agentic retrieval (`--agentic`)
+
+Agentic retrieval hands control of the search loop to the model itself. Instead of raggity deciding the queries up front, the Claude model is given a single in-process tool — `search_knowledge_base(query, k)` — and iterates: search, read the passages, spot gaps, search again with different phrasings or follow-up terms, then answer. Every passage retrieved across every round is accumulated into one pool, and the final answer's citations are verified against that whole multi-round pool.
+
+```bash
+rag ask "How do our backup retention, restore, and offsite policies fit together?" --agentic
+```
+
+- **Claude backend only.** The mechanism is the Claude Agent SDK's in-process MCP tool callback, so it requires `generation.backend = "claude"`. On any other backend the command errors and points you at [corrective retrieval](#corrective-retrieval-crag-style), which gives a bounded self-correcting loop that works on every backend.
+- The tool runs your normal retriever (raw top-`k`, no abstention floor) and returns passages already tagged with bracket citations, so the model cites exactly as in a normal answer.
+- Retrieval is capped at a handful of rounds (`max_turns = 8`). If, after searching, nothing sufficient is found, raggity abstains with the standard sentence.
+- `--agentic` overrides `--hyde`, `--step-back`, and `--expand` (the model drives its own queries), and is **mutually exclusive with `--decompose`** (combining them errors). Output is non-streaming in this version.
+
+**Cost:** several LLM turns plus one retrieval per tool call — noticeably more than a single `rag ask`. Reach for it on broad, multi-part questions where a fixed retrieval misses cross-cutting context; prefer `--decompose` for cleanly separable sub-questions, or `retrieval.corrective` when you want one automatic recovery round at lower cost (and on non-Claude backends).
+
+---
+
 ## Semantic answer cache
 
 When enabled, raggity stores answers in `<index.path>/answer_cache.json`, keyed on SHA-256 of the question + retrieved chunk IDs + model name. Cache hits return immediately with no LLM call.

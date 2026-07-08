@@ -205,6 +205,7 @@ Both `rag` and `raggity` are registered as console scripts — they are identica
 | `rag ask "..." --hyde` | HyDE query transform — generate a hypothetical passage to improve dense recall |
 | `rag ask "..." --step-back` | Step-back query transform — generate a broader question for higher-level context |
 | `rag ask "..." --decompose` | Decompose into sub-questions, retrieve for each, merge and answer |
+| `rag ask "..." --agentic` | Let the Claude model orchestrate multiple searches itself (multi-round retrieval); Claude backend only |
 | `rag ask "..." --no-cache` | Bypass the answer cache even when `generation.cache = true` |
 | `rag chat` | Start an interactive multi-turn chat REPL in the terminal |
 | `rag serve` | Start the local HTTP API server |

@@ -595,6 +595,19 @@ class Raggity:
             answer = await self.answerer.answer(question, chunks)
         return answer
 
+    def ask_agentic(self, question: str) -> Answer:
+        return _run_async(self.aask_agentic(question))
+
+    async def aask_agentic(self, question: str) -> Answer:
+        """Model-orchestrated multi-round retrieval (Claude backend only).
+
+        Delegates to :func:`raggity.agentic.ask_agentic`, which gives the model an
+        in-process ``search_knowledge_base`` tool and verifies the final answer's
+        citations against every chunk retrieved across all rounds.
+        """
+        from .agentic import ask_agentic
+        return await ask_agentic(self, question)
+
     def ask_decompose(self, question: str) -> Answer:
         return _run_async(self.aask_decompose(question))
 
