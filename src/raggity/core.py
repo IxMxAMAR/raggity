@@ -536,7 +536,15 @@ class Raggity:
             if verdict == "correct":
                 return chunks
             try:
-                rewritten = await rewrite_query(question, self.provider)
+                # Memoise the rewrite (like the verdict) so a repeated question
+                # rewrites deterministically -> same retrieval -> the answer
+                # cache can actually hit on corrective-triggered questions.
+                async def _rewrite():
+                    return {"query": await rewrite_query(question, self.provider)}
+
+                payload = await self._cached_transform(
+                    "crag_rewrite", question, 0, use_cache, _rewrite)
+                rewritten = payload.get("query", "")
             except Exception as exc:
                 _log.warning(
                     "corrective rewrite failed, keeping original chunks: %s", exc)

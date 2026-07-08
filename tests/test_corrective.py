@@ -218,3 +218,18 @@ def test_aask_stream_corrective_parity(tmp_path, monkeypatch):
     assert seen["rewrite"] == 1
     assert calls == [["how are backups done?"],
                      ["how are backups done?", "NAS backup schedule"]]
+
+
+# --- 8. rewrite memoisation: repeat corrective-triggered question -> one rewrite
+
+def test_rewrite_cached_across_repeat_question(tmp_path, monkeypatch):
+    """With cache on, a repeated corrective-triggered question must not re-pay
+    the rewrite call — deterministic rewrites keep the answer-cache key stable."""
+    seen = _mock(monkeypatch, verdict="incorrect", rewritten="NAS backup schedule")
+    rag = Raggity(_cfg(tmp_path, cache=True))
+    first = [_c("c_a", 0.5)]
+    second = [_c("c_c", 0.7)]
+    _spy_retrieval(monkeypatch, rag, first, second)
+    rag.ask("how are backups done?")
+    rag.ask("how are backups done?")
+    assert seen["rewrite"] == 1
