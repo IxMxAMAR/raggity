@@ -1,0 +1,1848 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Local-first, top-tier RAG over your notes, docs, and PDFs — answered by Claude.">
+      
+      
+      
+        <link rel="canonical" href="https://ixmxamar.github.io/raggity/configuration/">
+      
+      
+        <link rel="prev" href="../quickstart/">
+      
+      
+        <link rel="next" href="../backends/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Configuration - raggity</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="raggity" class="md-header__button md-logo" aria-label="raggity" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            raggity
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/IxMxAMAR/raggity" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    IxMxAMAR/raggity
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="raggity" class="md-nav__button md-logo" aria-label="raggity" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    raggity
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/IxMxAMAR/raggity" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    IxMxAMAR/raggity
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../demo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Demo
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Profiles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [sources]
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [index]
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#embedding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [embedding]
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[embedding]">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gpu-acceleration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GPU acceleration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#larger-embedding-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Larger embedding model
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#retrieval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [retrieval]
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[retrieval]">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#heavy-reranker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Heavy reranker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#late-interaction-reranking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Late-interaction reranking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-rerankers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom rerankers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#learned-sparse-retrieval-qdrant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Learned-sparse retrieval (Qdrant)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#contextual-retrieval-contextual" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contextual retrieval (contextual)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [generation]
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[generation]">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#personalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Personalization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conversation-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conversation memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#local-providers-discovery-auto-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local providers: discovery &amp; auto-start
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#externally-managed-backend-backend-external" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Externally-managed backend (backend = "external")
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [server]
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#observability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [observability]
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../retrieval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Retrieval
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ingestion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ingestion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server & API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deploy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deploy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Profiles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [sources]
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [index]
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#embedding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [embedding]
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[embedding]">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gpu-acceleration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GPU acceleration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#larger-embedding-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Larger embedding model
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#retrieval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [retrieval]
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[retrieval]">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#heavy-reranker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Heavy reranker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#late-interaction-reranking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Late-interaction reranking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-rerankers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom rerankers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#learned-sparse-retrieval-qdrant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Learned-sparse retrieval (Qdrant)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#contextual-retrieval-contextual" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contextual retrieval (contextual)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [generation]
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[generation]">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#personalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Personalization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conversation-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conversation memory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#local-providers-discovery-auto-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local providers: discovery &amp; auto-start
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#externally-managed-backend-backend-external" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Externally-managed backend (backend = "external")
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [server]
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#observability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [observability]
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
+<p>raggity is configured via a <code>raggity.toml</code> file in the current directory (or pass <code>--config PATH</code> to any command).</p>
+<p>Copy the example to get started:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>cp<span class="w"> </span>raggity.example.toml<span class="w"> </span>raggity.toml
+</code></pre></div>
+<hr />
+<h2 id="profiles">Profiles<a class="headerlink" href="#profiles" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">profile</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;low-ram&quot;</span>
+</code></pre></div>
+<p>A top-level <code>profile</code> key selects a named preset. <code>""</code> (default) applies no
+preset — every field below is governed individually. <code>"low-ram"</code> <strong>hard-overrides</strong>
+the fields in the table below, even if the same <code>raggity.toml</code> also sets those
+fields explicitly (the profile always wins). Any other value raises a
+validation error naming the valid choices.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Forced value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>index.backend</code></td>
+<td><code>"lancedb"</code> (embedded — no external vector server to run)</td>
+</tr>
+<tr>
+<td><code>embedding.model</code></td>
+<td><code>"BAAI/bge-small-en-v1.5"</code> (smallest shipped default)</td>
+</tr>
+<tr>
+<td><code>embedding.cache</code></td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>retrieval.rerank</code></td>
+<td><code>false</code> (skips loading the cross-encoder model — the biggest RAM save)</td>
+</tr>
+<tr>
+<td><code>retrieval.graph</code></td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>generation.cache</code></td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>server.max_sessions</code></td>
+<td><code>100</code></td>
+</tr>
+<tr>
+<td><code>server.max_user_rags</code></td>
+<td><code>4</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>rag doctor</code> prints an info line when a profile is active, e.g.:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>[--] profile: low-ram (rerank/graph/caches off, embedded lancedb)
+</code></pre></div>
+<p><strong>Measured serve RSS ceiling:</strong> 302 MB peak working set (Windows 11 x64, Python 3.12, raggity v0.11.0, low-ram profile, 5-doc LanceDB index, serving /healthz + /retrieve traffic; embedding model loaded, reranker/graph/caches disabled).</p>
+<hr />
+<h2 id="sources"><code>[sources]</code><a class="headerlink" href="#sources" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">[sources]</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">include</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;~/notes/**/*.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;~/docs/**/*.pdf&quot;</span><span class="p">]</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">exclude</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;**/drafts/**&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;**/*.tmp.md&quot;</span><span class="p">]</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">urls</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;https://docs.example.com/overview&quot;</span><span class="p">]</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>include</code></td>
+<td><code>[]</code></td>
+<td>Glob patterns for local files to index</td>
+</tr>
+<tr>
+<td><code>exclude</code></td>
+<td><code>[]</code></td>
+<td>Glob patterns (fnmatch on the posix path) to skip. Applied on top of built-in junk-dir pruning</td>
+</tr>
+<tr>
+<td><code>urls</code></td>
+<td><code>[]</code></td>
+<td>URLs to fetch and index on every <code>rag ingest</code> run</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Built-in junk directories are <strong>always</strong> pruned when they appear <em>below</em> an
+<code>include</code> pattern's static (pre-glob) prefix: <code>AppData</code>, <code>node_modules</code>,
+<code>.git</code>, <code>__pycache__</code>, <code>site-packages</code>, <code>.venv</code>, <code>venv</code>, <code>dist-packages</code>,
+<code>.raggity</code>, <code>.npm</code>, <code>.nuget</code>, <code>.gradle</code>, <code>.cargo</code>, <code>.conda</code>. This stops a
+broad pattern like <code>**/*.txt</code> run from your home directory from sweeping
+caches and dependency trees. A pattern pointed <em>inside</em> such a dir still works.</p>
+</blockquote>
+<hr />
+<h2 id="index"><code>[index]</code><a class="headerlink" href="#index" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">[index]</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;.raggity/index&quot;</span><span class="w">       </span><span class="c1"># relative to the current working directory</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">backend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;lancedb&quot;</span><span class="w">           </span><span class="c1"># or &quot;qdrant&quot;</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">ann_threshold</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">50000</span><span class="w">         </span><span class="c1"># build ANN index once chunk count exceeds this</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># Qdrant-specific (only when backend = &quot;qdrant&quot;)</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># qdrant_location = &quot;:memory:&quot;             # default — ephemeral in-memory</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="c1"># qdrant_location = &quot;http://localhost:6333&quot; # served Qdrant instance</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="n">qdrant_collection</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;raggity&quot;</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="c1"># qdrant_api_key = &quot;...&quot;      # or set QDRANT_API_KEY env var</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td><code>".raggity/index"</code></td>
+<td>Directory for LanceDB data and caches (relative to cwd)</td>
+</tr>
+<tr>
+<td><code>backend</code></td>
+<td><code>"lancedb"</code></td>
+<td>Vector store backend: <code>"lancedb"</code> or <code>"qdrant"</code></td>
+</tr>
+<tr>
+<td><code>ann_threshold</code></td>
+<td><code>50000</code></td>
+<td>Chunk count above which ANN index is built automatically</td>
+</tr>
+<tr>
+<td><code>qdrant_location</code></td>
+<td><code>":memory:"</code></td>
+<td>Qdrant location: <code>":memory:"</code> (default, ephemeral in-process), <code>"http://localhost:6333"</code> (served instance), or a local path</td>
+</tr>
+<tr>
+<td><code>qdrant_collection</code></td>
+<td><code>"raggity"</code></td>
+<td>Qdrant collection name</td>
+</tr>
+<tr>
+<td><code>qdrant_api_key</code></td>
+<td><code>""</code></td>
+<td>Qdrant API key (or set <code>QDRANT_API_KEY</code>)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="embedding"><code>[embedding]</code><a class="headerlink" href="#embedding" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">[embedding]</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;BAAI/bge-small-en-v1.5&quot;</span><span class="w">   </span><span class="c1"># default lightweight model</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">provider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;cpu&quot;</span><span class="w">                    </span><span class="c1"># cpu / cuda / directml / rocm</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">batch_size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">256</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># parallel = 4                      # omit for in-process (default); N = worker pool</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="n">cache</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="w">                       </span><span class="c1"># cache embeddings as JSON</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td><code>"BAAI/bge-small-en-v1.5"</code></td>
+<td>fastembed model name</td>
+</tr>
+<tr>
+<td><code>provider</code></td>
+<td><code>"cpu"</code></td>
+<td>ONNX Runtime execution provider</td>
+</tr>
+<tr>
+<td><code>batch_size</code></td>
+<td><code>256</code></td>
+<td>Embedding batch size</td>
+</tr>
+<tr>
+<td><code>parallel</code></td>
+<td><em>(unset)</em></td>
+<td>Embedding worker pool size. Default (unset/<code>None</code>) = in-process single model, the stable path. A positive <code>N</code> spawns <code>N</code> multiprocessing workers (each loads its own ONNX model); avoid on memory-constrained Windows</td>
+</tr>
+<tr>
+<td><code>cache</code></td>
+<td><code>false</code></td>
+<td>Cache embeddings by content hash to avoid re-embedding unchanged chunks</td>
+</tr>
+</tbody>
+</table>
+<h3 id="gpu-acceleration">GPU acceleration<a class="headerlink" href="#gpu-acceleration" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">[embedding]</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">provider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;cpu&quot;</span><span class="w">        </span><span class="c1"># default — works everywhere</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># provider = &quot;cuda&quot;     # NVIDIA (CUDA 11/12)</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># provider = &quot;directml&quot; # Windows — AMD, Intel, NVIDIA via DirectML</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># provider = &quot;rocm&quot;     # Linux — AMD ROCm</span>
+</code></pre></div>
+<h3 id="larger-embedding-model">Larger embedding model<a class="headerlink" href="#larger-embedding-model" title="Permanent link">&para;</a></h3>
+<p>For higher embedding quality (768-dim, 8k context, Matryoshka scaling):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">[embedding]</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;nomic-embed-text-v1.5-Q&quot;</span>
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Changing <code>embedding.model</code> triggers an automatic full index rebuild.</p>
+</div>
+<hr />
+<h2 id="retrieval"><code>[retrieval]</code><a class="headerlink" href="#retrieval" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">[retrieval]</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">candidates</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">top_k</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">5</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">rerank</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">rerank_backend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;cross-encoder&quot;</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="n">rerank_model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Xenova/ms-marco-MiniLM-L-6-v2&quot;</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">colbert_model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;answerdotai/answerai-colbert-small-v1&quot;</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="n">sufficiency_floor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.5</span><span class="w">   </span><span class="c1"># dense-cosine threshold — governs abstention</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="n">relevance_floor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.0</span><span class="w">     </span><span class="c1"># optional rerank-score filter (0.0 = off)</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="n">hybrid</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="n">dedup_cosine</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.92</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="n">rrf_k</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">60</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="n">parent_document</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="n">hyde</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="n">step_back</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="n">expand_n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span>
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="n">graph</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="n">graph_hops</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="n">contextual</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a><span class="n">ingest_concurrency</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span>
+<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a><span class="n">sparse</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;bm25&quot;</span><span class="w">          </span><span class="c1"># qdrant-only: &quot;bm25&quot; | &quot;splade&quot; | &quot;bm42&quot;</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>candidates</code></td>
+<td><code>30</code></td>
+<td>Chunks fetched from each retriever before fusion</td>
+</tr>
+<tr>
+<td><code>top_k</code></td>
+<td><code>5</code></td>
+<td>Chunks passed to the LLM after all filtering</td>
+</tr>
+<tr>
+<td><code>rerank</code></td>
+<td><code>true</code></td>
+<td>Enable reranking (backend chosen by <code>rerank_backend</code>)</td>
+</tr>
+<tr>
+<td><code>rerank_backend</code></td>
+<td><code>"cross-encoder"</code></td>
+<td>Reranker implementation: <code>"cross-encoder"</code> (sigmoid cross-encoder, uses <code>rerank_model</code>), <code>"colbert"</code> (late-interaction MaxSim, uses <code>colbert_model</code>), or a dotted import path <code>"package.module:ClassName"</code> for a custom reranker — see <a href="#custom-rerankers">Custom rerankers</a></td>
+</tr>
+<tr>
+<td><code>rerank_model</code></td>
+<td><code>"Xenova/ms-marco-MiniLM-L-6-v2"</code></td>
+<td>ONNX cross-encoder model (used when <code>rerank_backend = "cross-encoder"</code>)</td>
+</tr>
+<tr>
+<td><code>colbert_model</code></td>
+<td><code>"answerdotai/answerai-colbert-small-v1"</code></td>
+<td>fastembed late-interaction model (used when <code>rerank_backend = "colbert"</code>)</td>
+</tr>
+<tr>
+<td><code>sufficiency_floor</code></td>
+<td><code>0.5</code></td>
+<td>Dense-cosine similarity threshold below which raggity abstains ("I don't have enough information")</td>
+</tr>
+<tr>
+<td><code>relevance_floor</code></td>
+<td><code>0.0</code></td>
+<td>Optional secondary filter on the rerank score (0.0 = off); does not trigger abstention. Not comparable across <code>rerank_backend</code> values — see below</td>
+</tr>
+<tr>
+<td><code>hybrid</code></td>
+<td><code>true</code></td>
+<td>Enable hybrid (dense + BM25) retrieval</td>
+</tr>
+<tr>
+<td><code>dedup_cosine</code></td>
+<td><code>0.92</code></td>
+<td>Cosine similarity threshold for chunk deduplication</td>
+</tr>
+<tr>
+<td><code>rrf_k</code></td>
+<td><code>60</code></td>
+<td>RRF fusion constant (higher = flatter curve)</td>
+</tr>
+<tr>
+<td><code>parent_document</code></td>
+<td><code>false</code></td>
+<td>Expand matched chunks to parent documents</td>
+</tr>
+<tr>
+<td><code>hyde</code></td>
+<td><code>false</code></td>
+<td>Enable HyDE query transform permanently</td>
+</tr>
+<tr>
+<td><code>step_back</code></td>
+<td><code>false</code></td>
+<td>Enable step-back query transform permanently</td>
+</tr>
+<tr>
+<td><code>expand_n</code></td>
+<td><code>3</code></td>
+<td>Number of query variations for <code>--expand</code></td>
+</tr>
+<tr>
+<td><code>graph</code></td>
+<td><code>false</code></td>
+<td>Enable GraphRAG knowledge-graph augmentation</td>
+</tr>
+<tr>
+<td><code>graph_hops</code></td>
+<td><code>1</code></td>
+<td>BFS hops from matched entities in the graph</td>
+</tr>
+<tr>
+<td><code>graph_concurrency</code></td>
+<td><code>8</code></td>
+<td>Concurrent LLM extraction calls during <code>rag graph-build</code> (lower it for strict-rate-limit backends)</td>
+</tr>
+<tr>
+<td><code>corrective</code></td>
+<td><code>false</code></td>
+<td>Enable CRAG-style corrective retrieval: a retrieval evaluator (+1 LLM call/question) plus one query-rewrite-and-merge round (+1 more when triggered) — see <a href="../retrieval/#corrective-retrieval-crag-style">Corrective retrieval</a></td>
+</tr>
+<tr>
+<td><code>contextual</code></td>
+<td><code>false</code></td>
+<td>Anthropic-style contextual retrieval: at ingest, prepend an LLM-generated 1-2 sentence document context to each chunk's stored+embedded text. <strong>1 LLM call per new/changed chunk</strong> — see below</td>
+</tr>
+<tr>
+<td><code>ingest_concurrency</code></td>
+<td><code>8</code></td>
+<td>Concurrent LLM context-generation calls during contextual ingest (lower it for strict-rate-limit backends)</td>
+</tr>
+<tr>
+<td><code>sparse</code></td>
+<td><code>"bm25"</code></td>
+<td><strong>Qdrant-only</strong> learned-sparse retrieval: <code>"bm25"</code> (default), <code>"splade"</code>, or <code>"bm42"</code>. On <code>backend = "lancedb"</code> any non-<code>bm25</code> value is ignored (warning at startup) and falls back to BM25 FTS — see <a href="#learned-sparse-retrieval-qdrant">Learned-sparse retrieval</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="heavy-reranker">Heavy reranker<a class="headerlink" href="#heavy-reranker" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">[retrieval]</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">rerank_model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;BAAI/bge-reranker-v2-m3&quot;</span><span class="w">   </span><span class="c1"># ~1 GB, higher quality</span>
+</code></pre></div>
+<h3 id="late-interaction-reranking">Late-interaction reranking<a class="headerlink" href="#late-interaction-reranking" title="Permanent link">&para;</a></h3>
+<p><code>rerank_backend = "colbert"</code> swaps the cross-encoder for a ColBERT-style late-interaction
+reranker (fastembed's <code>LateInteractionTextEmbedding</code>). Instead of scoring the whole
+query against the whole chunk in one pass, it embeds the query and each candidate as
+<em>per-token</em> vectors and scores each chunk with MaxSim (for every query token, the best
+matching chunk token; scores summed and normalized by query-token count). This gives
+finer-grained, query-token-level matching than a single cross-encoder pass — often
+better at catching a chunk that only satisfies part of a multi-clause query — at the
+cost of an extra ~0.13 GB model download on first use (the default
+<code>answerdotai/answerai-colbert-small-v1</code>) and somewhat more compute per rerank call.
+It is storage-free: no index changes, rerank-stage only.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="k">[retrieval]</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">rerank_backend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;colbert&quot;</span>
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>ColBERT MaxSim scores are normalized to roughly <code>[0, 1]</code> but are <strong>not</strong> on the
+same scale as the cross-encoder's sigmoid scores. A <code>relevance_floor</code> tuned for
+one <code>rerank_backend</code> does not transfer to the other — re-tune it if you switch.</p>
+</div>
+<h3 id="custom-rerankers">Custom rerankers<a class="headerlink" href="#custom-rerankers" title="Permanent link">&para;</a></h3>
+<p><code>rerank_backend</code> also accepts a <strong>dotted import path</strong> <code>"package.module:ClassName"</code>,
+letting you drop in any reranker without touching raggity. When the value contains a
+colon, raggity imports the class and instantiates it as
+<code>ClassName(model_name=cfg.retrieval.rerank_model)</code>.</p>
+<p>The contract is the same as the built-in rerankers:</p>
+<ul>
+<li>constructed with a single <code>model_name</code> keyword argument;</li>
+<li>exposes <code>rerank(query: str, chunks: list[Chunk]) -&gt; list[Chunk]</code> that returns the
+  chunks with their <code>.score</code> set and <strong>sorted descending</strong> by score.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># my_pkg/rerankers.py</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">replace</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="k">class</span><span class="w"> </span><span class="nc">MyReranker</span><span class="p">:</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;my-model&quot;</span><span class="p">):</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">model_name</span> <span class="o">=</span> <span class="n">model_name</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>        <span class="c1"># ... load your model ...</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">rerank</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">chunks</span><span class="p">):</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>        <span class="n">scored</span> <span class="o">=</span> <span class="p">[</span><span class="n">replace</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">score</span><span class="o">=</span><span class="n">my_score</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">text</span><span class="p">))</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">chunks</span><span class="p">]</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>        <span class="n">scored</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">c</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">score</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>        <span class="k">return</span> <span class="n">scored</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="k">[retrieval]</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="n">rerank_backend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;my_pkg.rerankers:MyReranker&quot;</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="n">rerank_model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;my-model&quot;</span><span class="w">   </span><span class="c1"># passed to your class as model_name=...</span>
+</code></pre></div>
+<p>The module must be importable on <code>PYTHONPATH</code>. As with ColBERT, custom scores are not
+comparable to the cross-encoder sigmoid scale, so re-tune <code>relevance_floor</code> if you use it.</p>
+<h3 id="learned-sparse-retrieval-qdrant">Learned-sparse retrieval (Qdrant)<a class="headerlink" href="#learned-sparse-retrieval-qdrant" title="Permanent link">&para;</a></h3>
+<p>By default the sparse half of hybrid retrieval uses BM25 (LanceDB's Tantivy FTS, or
+Qdrant's <code>MatchText</code>). On the <strong>Qdrant backend</strong> you can instead use a learned-sparse
+model, which encodes queries and documents as sparse term-weight vectors (with term
+expansion) rather than exact keyword matches — often better recall on paraphrased or
+vocabulary-mismatched queries:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="k">[index]</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="n">backend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;qdrant&quot;</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="k">[retrieval]</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="n">sparse</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;splade&quot;</span><span class="w">   </span><span class="c1"># or &quot;bm42&quot;</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th><code>sparse</code></th>
+<th>Model</th>
+<th>Size</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>"bm25"</code> (default)</td>
+<td>—</td>
+<td>—</td>
+<td>Exact keyword match (<code>MatchText</code>); no extra download</td>
+</tr>
+<tr>
+<td><code>"splade"</code></td>
+<td><code>prithivida/Splade_PP_en_v1</code></td>
+<td>~0.53 GB</td>
+<td>SPLADE++ learned weights, highest quality</td>
+</tr>
+<tr>
+<td><code>"bm42"</code></td>
+<td><code>Qdrant/bm42-all-minilm-l6-v2-attentions</code></td>
+<td>~0.09 GB</td>
+<td>Attention-based, IDF-modified; small and fast</td>
+</tr>
+</tbody>
+</table>
+<p>When enabled, raggity stores a named sparse vector alongside the dense vector at upsert
+and queries it at retrieval; the sparse results flow into RRF exactly like BM25 results
+(rank-based fusion, so the different score scale is irrelevant). The sparse choice is part
+of the index fingerprint, so toggling it triggers a rebuild on the next <code>rag ingest</code>.</p>
+<div class="admonition warning">
+<p class="admonition-title">LanceDB fallback</p>
+<p>Learned-sparse is Qdrant-only. On <code>backend = "lancedb"</code>, any <code>sparse</code> other than
+<code>"bm25"</code> is <strong>ignored</strong> — raggity logs a warning at startup and uses BM25 FTS.
+LanceDB has no sparse-vector index.</p>
+</div>
+<h3 id="contextual-retrieval-contextual">Contextual retrieval (<code>contextual</code>)<a class="headerlink" href="#contextual-retrieval-contextual" title="Permanent link">&para;</a></h3>
+<p>Anthropic-style <a href="https://www.anthropic.com/news/contextual-retrieval">contextual retrieval</a>:
+at ingest time, one LLM call per chunk asks the model to situate that chunk within its
+full document in 1-2 sentences, and that context is prepended to the chunk's
+stored+embedded text. Chunks like <em>"revenue grew 3%"</em> become findable for queries that
+name the company or quarter the chunk never mentions. Citations verify against the full
+stored text, so citation support-checking works unchanged.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="k">[retrieval]</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="n">contextual</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="n">ingest_concurrency</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span><span class="w">   </span><span class="c1"># concurrent context-generation calls</span>
+</code></pre></div>
+<div class="admonition danger">
+<p class="admonition-title">Cost: one LLM call per new/changed chunk</p>
+<p>This is by far the most LLM-cost-heavy option in raggity. Ingesting a corpus that
+chunks into 10,000 pieces makes <strong>10,000 provider calls</strong>. <code>rag ingest</code> prints a
+notice when the flag is on. Incremental ingest keeps re-runs cheap: only new or
+changed documents pay; unchanged documents are never re-contextualized. A provider
+failure on a single chunk logs a warning and stores that chunk un-contextualized —
+ingest never fails because of context generation.</p>
+</div>
+<p>Toggling <code>contextual</code> changes the index fingerprint, so the next <code>rag ingest</code> rebuilds
+the index (chunks embedded with and without context prefixes must not be mixed).</p>
+<hr />
+<h2 id="generation"><code>[generation]</code><a class="headerlink" href="#generation" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="k">[generation]</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="n">backend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;claude&quot;</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;claude-opus-4-8&quot;</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="n">auth</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="n">cache</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="c1"># OpenAI-compatible backend</span>
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="c1"># backend = &quot;openai&quot;</span>
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="c1"># model = &quot;gpt-4o-mini&quot;</span>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="c1"># base_url = &quot;https://api.openai.com/v1&quot;</span>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="c1"># api_key_env = &quot;OPENAI_API_KEY&quot;</span>
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="c1"># Ollama backend</span>
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="c1"># backend = &quot;ollama&quot;</span>
+<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="c1"># model = &quot;llama3.1&quot;</span>
+<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="c1"># base_url = &quot;http://localhost:11434/v1&quot;</span>
+<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>
+<a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="c1"># Externally-managed OpenAI-compatible backend</span>
+<a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a><span class="c1"># backend = &quot;external&quot;</span>
+<a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a><span class="c1"># model = &quot;some-model&quot;</span>
+<a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a><span class="c1"># base_url = &quot;http://127.0.0.1:9999/v1&quot;</span>
+<a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a>
+<a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a><span class="c1"># Opt-in personalization (default off). See &quot;Personalization&quot; below.</span>
+<a id="__codelineno-15-24" name="__codelineno-15-24" href="#__codelineno-15-24"></a><span class="c1"># persona = &quot;The user is Dr. Vane, a cardiologist. Prefer clinical phrasing.&quot;</span>
+<a id="__codelineno-15-25" name="__codelineno-15-25" href="#__codelineno-15-25"></a><span class="c1"># personal_kb = false</span>
+<a id="__codelineno-15-26" name="__codelineno-15-26" href="#__codelineno-15-26"></a>
+<a id="__codelineno-15-27" name="__codelineno-15-27" href="#__codelineno-15-27"></a><span class="c1"># Rolling conversation-summary memory for rag chat / /chat sessions. See</span>
+<a id="__codelineno-15-28" name="__codelineno-15-28" href="#__codelineno-15-28"></a><span class="c1"># &quot;Conversation memory&quot; below. 0 disables summarization.</span>
+<a id="__codelineno-15-29" name="__codelineno-15-29" href="#__codelineno-15-29"></a><span class="c1"># memory_max_turns = 20</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend</code></td>
+<td><code>"claude"</code></td>
+<td>LLM backend: <code>"claude"</code>, <code>"openai"</code>, <code>"ollama"</code>, or <code>"external"</code></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td><code>"claude-opus-4-8"</code></td>
+<td>Model name (backend-specific)</td>
+</tr>
+<tr>
+<td><code>auth</code></td>
+<td><code>"auto"</code></td>
+<td>Claude auth mode: <code>"auto"</code>, <code>"subscription"</code>, or <code>"api_key"</code></td>
+</tr>
+<tr>
+<td><code>cache</code></td>
+<td><code>false</code></td>
+<td>Semantic answer cache (keyed on question + chunks + model + effective system prompt)</td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td><code>null</code></td>
+<td>Generation temperature passed to the model (null = use model default)</td>
+</tr>
+<tr>
+<td><code>base_url</code></td>
+<td>varies</td>
+<td>OpenAI-compatible base URL</td>
+</tr>
+<tr>
+<td><code>api_key_env</code></td>
+<td><code>"OPENAI_API_KEY"</code></td>
+<td>Env var name holding the API key (OpenAI/Ollama backends)</td>
+</tr>
+<tr>
+<td><code>auto_start</code></td>
+<td><code>true</code></td>
+<td>Auto-start a local backend (e.g. ollama) on first use when a runtime binary is found and the server is not already running</td>
+</tr>
+<tr>
+<td><code>persona</code></td>
+<td><code>""</code></td>
+<td>Free-form user context appended to the system prompt (grounding rules still bind). Empty = system prompt unchanged</td>
+</tr>
+<tr>
+<td><code>personal_kb</code></td>
+<td><code>false</code></td>
+<td>Treat the knowledge base as the current user's own (first-person docs/questions refer to them)</td>
+</tr>
+<tr>
+<td><code>memory_max_turns</code></td>
+<td><code>20</code></td>
+<td>Chat turn count above which the oldest turns are compressed into a rolling summary (see "Conversation memory" below). <code>0</code> disables summarization — chat falls back to the fixed 6-turn prompt window only</td>
+</tr>
+</tbody>
+</table>
+<h3 id="personalization">Personalization<a class="headerlink" href="#personalization" title="Permanent link">&para;</a></h3>
+<p><code>persona</code> and <code>personal_kb</code> are <strong>opt-in</strong> and off by default; with both unset the
+system prompt is byte-identical to the stock one. When set, their content is
+appended to the system prompt as a clearly-delimited <strong>User context:</strong> block,
+followed by a reminder that the citation + abstention rules still apply — the
+model must still answer only from the retrieved context and cite every claim.
+Toggling either value changes the answer-cache key, so cached answers are
+invalidated automatically.</p>
+<h3 id="conversation-memory">Conversation memory<a class="headerlink" href="#conversation-memory" title="Permanent link">&para;</a></h3>
+<p><code>rag chat</code> and server chat sessions always prompt the model with only the
+most-recent 6 turns (<code>Conversation.recent(6)</code>) — that window never grows.
+Beyond that, once a conversation accumulates more than <code>memory_max_turns</code>
+total turns, the oldest turns (everything beyond the most-recent
+<code>memory_max_turns // 2</code>) are compressed into a rolling summary via <strong>one</strong>
+LLM call and dropped from the turn list; the summary is carried forward and
+merged with on each subsequent overflow. The summary is injected as a
+synthetic leading line ("Earlier conversation summary: ...") in the prompt's
+conversation-so-far block, so long chats keep earlier context without an
+ever-growing prompt. If the summarization call fails, the oldest turns are
+still dropped (plain truncation) so the conversation stays bounded — the
+chat itself never raises. Set <code>memory_max_turns = 0</code> to disable
+summarization entirely (pure fixed-window behavior, the old default).</p>
+<h3 id="local-providers-discovery-auto-start">Local providers: discovery &amp; auto-start<a class="headerlink" href="#local-providers-discovery-auto-start" title="Permanent link">&para;</a></h3>
+<p><code>rag model --list</code> probes known local runtimes (ollama, lmstudio, llamacpp,
+vllm, jan, koboldcpp) and prints which are running, installed, and what models
+they expose — copy-pasteable into <code>rag model &lt;model&gt; -p &lt;provider&gt;</code>. Local
+OpenAI-compatible runtimes map to <code>backend = "openai"</code> plus the runtime's
+default <code>base_url</code> (no API key required for a loopback server); <code>ollama</code> keeps
+<code>backend = "ollama"</code>. With <code>auto_start = true</code>, an <code>ollama</code> backend is started
+on first request if the <code>ollama</code> binary is found and the server is not already
+up. <code>rag doctor</code> reports the full discovery table and, for ollama, will start
+the server and check that the configured model is pulled.</p>
+<h3 id="externally-managed-backend-backend-external">Externally-managed backend (<code>backend = "external"</code>)<a class="headerlink" href="#externally-managed-backend-backend-external" title="Permanent link">&para;</a></h3>
+<p><code>backend = "external"</code> targets an OpenAI-compatible server whose lifecycle is
+owned by another tool — for example <a href="https://github.com/IxMxAMAR/rigma">Rigma</a>
+or a server you start and manage yourself. raggity <strong>never</strong> auto-starts it,
+even if a runtime binary is discoverable on the machine.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="k">[generation]</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="n">backend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;external&quot;</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;some-model&quot;</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="n">base_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;http://127.0.0.1:9999/v1&quot;</span><span class="w">   </span><span class="c1"># required — no default</span>
+</code></pre></div>
+<p><code>base_url</code> is <strong>required</strong>; raggity raises at startup if it's missing.
+Readiness is checked lazily on first request (and by <code>rag doctor</code>) via <code>GET
+&lt;root&gt;/health</code>, falling back to <code>GET &lt;root&gt;/v1/models</code> if that fails. If both
+probes fail, raggity raises a clear error naming the exact <code>base_url</code> and
+stating that <code>backend=external</code> never launches servers itself.</p>
+<p>Switch to it from the CLI:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>rag<span class="w"> </span>model<span class="w"> </span>some-model<span class="w"> </span>-p<span class="w"> </span>external<span class="w"> </span>--base-url<span class="w"> </span>http://127.0.0.1:9999
+</code></pre></div>
+<hr />
+<h2 id="server"><code>[server]</code><a class="headerlink" href="#server" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="k">[server]</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="n">host</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;0.0.0.0&quot;</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="n">port</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8000</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>host</code></td>
+<td><code>"0.0.0.0"</code></td>
+<td>Server bind host</td>
+</tr>
+<tr>
+<td><code>port</code></td>
+<td><code>8000</code></td>
+<td>Server listen port</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="observability"><code>[observability]</code><a class="headerlink" href="#observability" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="k">[observability]</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="n">otel_endpoint</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="w">    </span><span class="c1"># OTLP gRPC endpoint, e.g. &quot;http://localhost:4317&quot;</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>otel_endpoint</code></td>
+<td><code>""</code></td>
+<td>OpenTelemetry collector endpoint. Empty = disabled</td>
+</tr>
+</tbody>
+</table>
+<p>Requires the <code>otel</code> extra: <code>pip install raggity[otel]</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "content.code.copy", "content.code.annotate", "navigation.top", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
