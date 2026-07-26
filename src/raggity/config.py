@@ -41,6 +41,10 @@ class RetrievalConfig(BaseModel):
     # MaxSim scoring via fastembed's LateInteractionTextEmbedding, uses `colbert_model`).
     rerank_backend: str = "cross-encoder"
     rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    # ONNX execution provider for the cross-encoder, same values as
+    # embedding.provider. Separate knob because the reranker is a second,
+    # smaller model — a box can want the GPU for embedding and not for this.
+    rerank_provider: str = "cpu"  # cpu | cuda | directml | rocm
     colbert_model: str = "answerdotai/answerai-colbert-small-v1"
     top_k: int = 5
     dedup_cosine: float = 0.92

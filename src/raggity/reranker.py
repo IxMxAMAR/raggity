@@ -14,10 +14,14 @@ class Reranker(ABC):
 
 
 class FastEmbedReranker(Reranker):
-    def __init__(self, model_name: str = "Xenova/ms-marco-MiniLM-L-6-v2") -> None:
+    def __init__(self, model_name: str = "Xenova/ms-marco-MiniLM-L-6-v2",
+                 provider: str = "cpu") -> None:
         from fastembed.rerank.cross_encoder import TextCrossEncoder
 
-        self._model = TextCrossEncoder(model_name=model_name)
+        from .embedder import onnx_providers
+
+        self._model = TextCrossEncoder(model_name=model_name,
+                                       providers=onnx_providers(provider))
 
     def rerank(self, query: str, chunks: list[Chunk]) -> list[Chunk]:
         if not chunks:

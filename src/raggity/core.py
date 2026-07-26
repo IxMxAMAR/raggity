@@ -129,7 +129,9 @@ class Raggity:
                 return ColbertReranker(model_name=self.cfg.retrieval.colbert_model)
             if backend in ("cross-encoder", "fastembed"):
                 from .reranker import FastEmbedReranker
-                return FastEmbedReranker(model_name=self.cfg.retrieval.rerank_model)
+                return FastEmbedReranker(
+                    model_name=self.cfg.retrieval.rerank_model,
+                    provider=self.cfg.retrieval.rerank_provider)
             # Custom reranker via dotted import path "package.module:Class".
             # Contract: cls(model_name=...) with rerank(query, chunks) -> chunks
             # (scored, sorted desc).  See docs/reference/configuration.md.

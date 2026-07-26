@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import pytest
+from raggity.embedder import ONNX_PROVIDERS, onnx_providers
 from raggity.models import Chunk
 from raggity.reranker import ColbertReranker, FastEmbedReranker, _maxsim_score
 
@@ -38,6 +39,71 @@ def test_rerank_scores_in_zero_one(rr):
     out = rr.rerank("how do I back up my data?", chunks)
     for c in out:
         assert 0.0 < c.score < 1.0, f"score {c.score} not in (0, 1)"
+
+
+# --- execution provider plumbing (no real model download) ---------------
+
+def test_every_provider_chain_falls_back_to_cpu():
+    # A GPU chain that does not end in CPU turns a missing runtime into a hard
+    # load failure. Accelerated == faster-if-available, never all-or-nothing.
+    for name, chain in ONNX_PROVIDERS.items():
+        assert chain[-1] == "CPUExecutionProvider", f"{name} cannot fall back"
+
+
+def test_onnx_providers_normalizes_and_defaults_to_cpu():
+    assert onnx_providers("rocm")[0] == "ROCMExecutionProvider"
+    assert onnx_providers(" ROCm ") == onnx_providers("rocm")   # case/space
+    for junk in ("gpu", "", None, "CUDA_11"):                   # typos are CPU
+        assert onnx_providers(junk) == ["CPUExecutionProvider"]
+
+
+def test_reranker_hands_the_provider_chain_to_fastembed(monkeypatch):
+    seen = {}
+
+    class _FakeCrossEncoder:
+        def __init__(self, model_name, providers=None, **kw):
+            seen["model"], seen["providers"] = model_name, providers
+
+    import fastembed.rerank.cross_encoder as ce
+    monkeypatch.setattr(ce, "TextCrossEncoder", _FakeCrossEncoder)
+
+    FastEmbedReranker(model_name="m", provider="rocm")
+    assert seen["model"] == "m"
+    assert seen["providers"] == ["ROCMExecutionProvider", "CPUExecutionProvider"]
+
+
+def test_reranker_defaults_to_cpu_when_no_provider_given(monkeypatch):
+    seen = {}
+
+    class _FakeCrossEncoder:
+        def __init__(self, model_name, providers=None, **kw):
+            seen["providers"] = providers
+
+    import fastembed.rerank.cross_encoder as ce
+    monkeypatch.setattr(ce, "TextCrossEncoder", _FakeCrossEncoder)
+
+    FastEmbedReranker(model_name="m")
+    assert seen["providers"] == ["CPUExecutionProvider"]
+
+
+def test_core_passes_configured_rerank_provider(monkeypatch):
+    # the wire from raggity.toml -> RetrievalConfig -> FastEmbedReranker
+    from raggity.config import RaggityConfig, RetrievalConfig
+    from raggity.core import Raggity
+
+    seen = {}
+
+    class _FakeCrossEncoder:
+        def __init__(self, model_name, providers=None, **kw):
+            seen["providers"] = providers
+
+    import fastembed.rerank.cross_encoder as ce
+    monkeypatch.setattr(ce, "TextCrossEncoder", _FakeCrossEncoder)
+
+    cfg = RaggityConfig(retrieval=RetrievalConfig(
+        rerank=True, rerank_backend="cross-encoder", rerank_provider="directml"))
+    assert Raggity(cfg).reranker is not None
+    assert seen["providers"] == ["DmlExecutionProvider", "CPUExecutionProvider"]
 
 
 # --- ColbertReranker: MaxSim math on toy vectors (no real model download) ---

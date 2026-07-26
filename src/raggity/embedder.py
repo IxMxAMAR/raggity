@@ -4,12 +4,22 @@ from abc import ABC, abstractmethod
 
 from .registry import register
 
-_PROVIDERS = {
+ONNX_PROVIDERS = {
     "cpu": ["CPUExecutionProvider"],
     "cuda": ["CUDAExecutionProvider", "CPUExecutionProvider"],
     "directml": ["DmlExecutionProvider", "CPUExecutionProvider"],
     "rocm": ["ROCMExecutionProvider", "CPUExecutionProvider"],
 }
+
+
+def onnx_providers(name: str) -> list[str]:
+    """ONNX Runtime provider chain for a config `provider` value.
+
+    Every accelerated chain ends in CPUExecutionProvider so a machine without
+    the GPU runtime installed degrades to CPU instead of failing to load the
+    model. An unknown name is CPU too — a typo should be slow, not fatal.
+    """
+    return ONNX_PROVIDERS.get((name or "").strip().lower(), ONNX_PROVIDERS["cpu"])
 
 
 class Embedder(ABC):
@@ -31,8 +41,8 @@ class FastEmbedEmbedder(Embedder):
                  parallel: int | None = None) -> None:
         from fastembed import TextEmbedding
 
-        providers = _PROVIDERS.get(provider, _PROVIDERS["cpu"])
-        self._model = TextEmbedding(model_name=model_name, providers=providers)
+        self._model = TextEmbedding(model_name=model_name,
+                                    providers=onnx_providers(provider))
         self._batch_size = batch_size
         self._parallel = parallel
         self._dim: int | None = None

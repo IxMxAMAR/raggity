@@ -122,6 +122,23 @@ provider = "cpu"        # default — works everywhere
 # provider = "rocm"     # Linux — AMD ROCm
 ```
 
+Each GPU value is a *chain* that ends in `CPUExecutionProvider`, so a box
+without that runtime installed falls back to CPU rather than failing to load
+the model. An unrecognised value is CPU too — a typo costs speed, not a run.
+
+The cross-encoder reranker has its own knob,
+[`retrieval.rerank_provider`](#retrieval), defaulting to `cpu`: it is a second,
+much smaller model, and wanting the GPU for embedding does not imply wanting it
+here. Set both to use the GPU throughout:
+
+```toml
+[embedding]
+provider = "rocm"
+
+[retrieval]
+rerank_provider = "rocm"
+```
+
 ### Larger embedding model
 
 For higher embedding quality (768-dim, 8k context, Matryoshka scaling):
@@ -145,6 +162,7 @@ top_k = 5
 rerank = true
 rerank_backend = "cross-encoder"
 rerank_model = "Xenova/ms-marco-MiniLM-L-6-v2"
+rerank_provider = "cpu"   # cpu / cuda / directml / rocm — same values as embedding.provider
 colbert_model = "answerdotai/answerai-colbert-small-v1"
 sufficiency_floor = 0.5   # dense-cosine threshold — governs abstention
 relevance_floor = 0.0     # optional rerank-score filter (0.0 = off)
@@ -169,6 +187,7 @@ sparse = "bm25"          # qdrant-only: "bm25" | "splade" | "bm42"
 | `rerank` | `true` | Enable reranking (backend chosen by `rerank_backend`) |
 | `rerank_backend` | `"cross-encoder"` | Reranker implementation: `"cross-encoder"` (sigmoid cross-encoder, uses `rerank_model`), `"colbert"` (late-interaction MaxSim, uses `colbert_model`), or a dotted import path `"package.module:ClassName"` for a custom reranker — see [Custom rerankers](#custom-rerankers) |
 | `rerank_model` | `"Xenova/ms-marco-MiniLM-L-6-v2"` | ONNX cross-encoder model (used when `rerank_backend = "cross-encoder"`) |
+| `rerank_provider` | `"cpu"` | ONNX Runtime execution provider for the cross-encoder: `cpu` / `cuda` / `directml` / `rocm`. Same values as [`embedding.provider`](#gpu-acceleration), set separately because the reranker is a second, smaller model — you may want the GPU for one and not the other. Every GPU chain falls back to CPU if that runtime is missing, so a wrong value is slow, not fatal |
 | `colbert_model` | `"answerdotai/answerai-colbert-small-v1"` | fastembed late-interaction model (used when `rerank_backend = "colbert"`) |
 | `sufficiency_floor` | `0.5` | Dense-cosine similarity threshold below which raggity abstains ("I don't have enough information") |
 | `relevance_floor` | `0.0` | Optional secondary filter on the rerank score (0.0 = off); does not trigger abstention. Not comparable across `rerank_backend` values — see below |
