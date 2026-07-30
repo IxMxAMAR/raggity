@@ -11,6 +11,13 @@ build/
 # stray test logs
 test_output.txt
 
+# Internal notes and drafts — this is a PUBLIC repo, and these were purged
+# from history once already. Ignored so they cannot drift back in.
+LAUNCH.md
+docs/internal/
+docs/superpowers/
+.superpowers/
+
 # MkDocs generated site
 site/
 
