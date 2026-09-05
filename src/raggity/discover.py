@@ -6,6 +6,9 @@ human confirms.
 """
 from __future__ import annotations
 
+import json
+import os
+import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,4 +69,49 @@ def scan_named(roots: list[Path]) -> list[Candidate]:
             continue
         out.append(Candidate(path=root, kind="known", file_count=total,
                              exts=exts, confidence=50, why=describe(exts)))
+    return out
+
+
+def obsidian_config_path() -> Path | None:
+    """Where Obsidian records its vault list, per platform.
+
+    Obsidian writes every vault's absolute path here, so this is one file read
+    instead of walking the disk looking for `.obsidian` markers.
+    """
+    home = Path.home()
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        p = Path(appdata) / "obsidian" / "obsidian.json" if appdata else None
+    elif sys.platform == "darwin":
+        p = home / "Library" / "Application Support" / "obsidian" / "obsidian.json"
+    else:
+        p = home / ".config" / "obsidian" / "obsidian.json"
+    return p if p and p.is_file() else None
+
+
+def scan_obsidian() -> list[Candidate]:
+    """Vaults Obsidian itself knows about. A corrupt or absent config is not an
+    error — it just means this signal has nothing to say."""
+    cfg = obsidian_config_path()
+    if cfg is None:
+        return []
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        vaults = data.get("vaults") or {}
+    except (OSError, ValueError, AttributeError):
+        return []
+    out: list[Candidate] = []
+    for entry in vaults.values():
+        raw = (entry or {}).get("path") if isinstance(entry, dict) else None
+        if not raw:
+            continue
+        path = Path(raw)
+        if not path.is_dir():
+            continue                       # Obsidian keeps deleted vaults listed
+        total, exts = count_indexable(path)
+        if not total:
+            continue
+        out.append(Candidate(path=path, kind="obsidian", file_count=total,
+                             exts=exts, confidence=100,
+                             why=f"Obsidian vault - {describe(exts)}"))
     return out

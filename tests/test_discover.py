@@ -1,6 +1,13 @@
+import json
 from pathlib import Path
 
-from raggity.discover import DISCOVER_EXTS, Candidate, count_indexable, scan_named
+from raggity.discover import (
+    DISCOVER_EXTS,
+    Candidate,
+    count_indexable,
+    scan_named,
+    scan_obsidian,
+)
 
 
 def _tree(root: Path, names: list[str]) -> Path:
@@ -48,3 +55,37 @@ def test_scan_named_never_reads_file_contents(tmp_path, monkeypatch):
 
     monkeypatch.setattr("builtins.open", _boom)
     assert scan_named([tmp_path])[0].file_count == 1
+
+
+def test_obsidian_vaults_are_read_from_obsidian_s_own_config(tmp_path, monkeypatch):
+    """The highest-confidence signal on the machine, and it costs one file
+    read rather than a search."""
+    vault = _tree(tmp_path / "Writing", ["ch1.md", "ch2.md"])
+    (vault / ".obsidian").mkdir()
+    cfg = tmp_path / "obsidian.json"
+    cfg.write_text(json.dumps(
+        {"vaults": {"abc": {"path": str(vault)}}}), encoding="utf-8")
+    monkeypatch.setattr("raggity.discover.obsidian_config_path", lambda: cfg)
+
+    got = scan_obsidian()
+    assert [c.path for c in got] == [vault]
+    assert got[0].kind == "obsidian"
+    assert got[0].confidence > 50           # outranks a plain named folder
+    assert "Obsidian vault" in got[0].why
+
+
+def test_a_vault_that_no_longer_exists_is_skipped(tmp_path, monkeypatch):
+    """Obsidian keeps deleted vaults in its list; offering one is a dead end."""
+    cfg = tmp_path / "obsidian.json"
+    cfg.write_text(json.dumps(
+        {"vaults": {"gone": {"path": str(tmp_path / "Deleted")}}}),
+        encoding="utf-8")
+    monkeypatch.setattr("raggity.discover.obsidian_config_path", lambda: cfg)
+    assert scan_obsidian() == []
+
+
+def test_a_corrupt_obsidian_config_is_not_fatal(tmp_path, monkeypatch):
+    cfg = tmp_path / "obsidian.json"
+    cfg.write_text("{not json", encoding="utf-8")
+    monkeypatch.setattr("raggity.discover.obsidian_config_path", lambda: cfg)
+    assert scan_obsidian() == []
