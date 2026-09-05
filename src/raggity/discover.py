@@ -14,7 +14,6 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from .loader import _expand
 from .readers import SUPPORTED_EXTS
 
 # Images are in SUPPORTED_EXTS but only readable with the OCR extra, so a photo
@@ -34,22 +33,48 @@ class Candidate:
     why: str
 
 
-def count_indexable(path: Path) -> tuple[int, dict[str, int]]:
-    """How many files under *path* ingest would actually take, by extension.
+# Counting stops here. The number exists to help someone choose between
+# folders, and "5,000+" answers that as well as an exact figure would — while
+# an exact figure over a large tree is what made `rag discover` take minutes.
+COUNT_CAP = 5_000
+_COUNT_SKIP = {"node_modules", "__pycache__", "venv", ".venv", "dist", "build",
+               "site-packages", ".git", "AppData", "Library"}
 
-    Counted through the loader's own glob expansion so the number shown is the
-    number ingested — junk directories pruned the same way.
+
+def count_indexable(path: Path, *, deadline: float | None = None,
+                    cap: int = COUNT_CAP) -> tuple[int, dict[str, int]]:
+    """How many files under *path* ingest would take, by extension.
+
+    Bounded on purpose. The obvious implementation is one recursive glob, and
+    that is what shipped first — but `glob` walks the whole subtree, cannot be
+    interrupted, and on a real `~/Documents` it turned a command budgeted at
+    1.5s into minutes. This walks with `os.walk` so junk directories are pruned
+    before they are descended into, and stops at *cap* or *deadline*.
+
+    A total equal to *cap* means "at least this many"; `describe` says so.
     """
-    pattern = str(Path(path) / "**" / "*")
-    found = [Path(p) for p in _expand([pattern])]
-    exts = Counter(p.suffix.lower() for p in found
-                   if p.suffix.lower() in DISCOVER_EXTS and p.is_file())
-    return sum(exts.values()), dict(sorted(exts.items()))
+    total = 0
+    exts: Counter[str] = Counter()
+    for root, dirnames, filenames in os.walk(path, onerror=lambda _e: None):
+        dirnames[:] = [d for d in dirnames
+                       if not d.startswith(".") and d not in _COUNT_SKIP]
+        for name in filenames:
+            ext = os.path.splitext(name)[1].lower()
+            if ext in DISCOVER_EXTS:
+                exts[ext] += 1
+                total += 1
+                if total >= cap:
+                    return total, dict(sorted(exts.items()))
+        if deadline is not None and time.monotonic() > deadline:
+            break
+    return total, dict(sorted(exts.items()))
 
 
 def describe(exts: dict[str, int]) -> str:
-    """`341 notes` / `1,204 documents - pdf, docx, md`."""
+    """`341 notes` / `1,204 documents - pdf, docx, md` / `5,000+ documents`."""
     total = sum(exts.values())
+    if total >= COUNT_CAP:
+        return f"{COUNT_CAP:,}+ documents"
     kinds = ", ".join(e.lstrip(".") for e, _ in
                       sorted(exts.items(), key=lambda kv: -kv[1])[:3])
     noun = "note" if set(exts) <= {".md", ".txt"} else "document"
@@ -57,7 +82,8 @@ def describe(exts: dict[str, int]) -> str:
         f" - {kinds}" if len(exts) > 1 else "")
 
 
-def scan_named(roots: list[Path]) -> list[Candidate]:
+def scan_named(roots: list[Path],
+               deadline: float | None = None) -> list[Candidate]:
     """Candidates for a fixed list of directories. Missing or empty ones are
     simply absent — an offer with nothing behind it wastes the user's read."""
     out: list[Candidate] = []
@@ -65,7 +91,7 @@ def scan_named(roots: list[Path]) -> list[Candidate]:
         root = Path(root)
         if not root.is_dir():
             continue
-        total, exts = count_indexable(root)
+        total, exts = count_indexable(root, deadline=deadline)
         if not total:
             continue
         out.append(Candidate(path=root, kind="known", file_count=total,
@@ -90,7 +116,7 @@ def obsidian_config_path() -> Path | None:
     return p if p and p.is_file() else None
 
 
-def scan_obsidian() -> list[Candidate]:
+def scan_obsidian(deadline: float | None = None) -> list[Candidate]:
     """Vaults Obsidian itself knows about. A corrupt or absent config is not an
     error — it just means this signal has nothing to say."""
     cfg = obsidian_config_path()
@@ -109,7 +135,7 @@ def scan_obsidian() -> list[Candidate]:
         path = Path(raw)
         if not path.is_dir():
             continue                       # Obsidian keeps deleted vaults listed
-        total, exts = count_indexable(path)
+        total, exts = count_indexable(path, deadline=deadline)
         if not total:
             continue
         out.append(Candidate(path=path, kind="obsidian", file_count=total,
@@ -152,7 +178,7 @@ def _walk_for_dense(home: Path, deadline: float | None,
             if f.is_file() and f.suffix.lower() in DISCOVER_EXTS:
                 exts[f.suffix.lower()] = exts.get(f.suffix.lower(), 0) + 1
         if sum(exts.values()) >= MIN_DENSE_FILES:
-            total, full = count_indexable(cur)
+            total, full = count_indexable(cur, deadline=deadline)
             claimed.append(cur)
             out.append(Candidate(path=cur, kind="found", file_count=total,
                                  exts=full, confidence=25, why=describe(full)))
@@ -171,21 +197,26 @@ def discover(*, budget_s: float = 1.5, deep: bool = False,
     cwd = Path(cwd if cwd is not None else Path.cwd())
     home = Path(home if home is not None else Path.home())
 
-    cands: list[Candidate] = list(scan_obsidian())
+    # ONE deadline for the whole command. Budgeting only the walk left the
+    # counting unbounded, and counting a real ~/Documents is what actually took
+    # the minutes: `rag discover` ran for over three of them before this.
+    deadline = None if deep else time.monotonic() + budget_s
+
+    cands: list[Candidate] = list(scan_obsidian(deadline))
     seen: set[Path] = {c.path for c in cands}
 
-    for c in scan_named([cwd]):
+    for c in scan_named([cwd], deadline):
         if c.path not in seen:
             cands.append(Candidate(c.path, "cwd", c.file_count, c.exts, 75,
                                    f"this folder - {c.why}"))
             seen.add(c.path)
 
-    for c in scan_named([home / "Documents", home / "Notes", home / "Desktop"]):
+    for c in scan_named([home / "Documents", home / "Notes", home / "Desktop"],
+                        deadline):
         if c.path not in seen:
             cands.append(c)
             seen.add(c.path)
 
-    deadline = None if deep else time.monotonic() + budget_s
     walked, complete = _walk_for_dense(home, deadline, seen)
     cands.extend(c for c in walked if c.path not in seen)
 

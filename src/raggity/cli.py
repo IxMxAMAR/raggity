@@ -69,7 +69,8 @@ def _rag(config: str | None) -> Raggity:
 
 _INIT_TEMPLATE = """\
 # raggity.toml - configuration for raggity
-# Edit [sources] then run: rag ingest
+# Add folders with `rag add <folder>` - it writes [sources] for you and indexes
+# them. Edit anything here by hand if you prefer; `rag ingest` re-indexes.
 
 # profile = "low-ram"  # minimize RAM: embedded lancedb, no rerank/graph/caches, capped sessions
 

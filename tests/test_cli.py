@@ -498,11 +498,15 @@ def test_model_preserves_template_comments(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(cli_mod.app, ["init"])
     dest = tmp_path / "raggity.toml"
-    assert "# Edit [sources] then run" in dest.read_text()  # sanity: comment present
+    # Anchored on the template's title line rather than a line of guidance:
+    # this test is about tomlkit preserving comments, not about the wording,
+    # and pinning the wording made a copy change look like a tomlkit failure.
+    marker = "# raggity.toml - configuration for raggity"
+    assert marker in dest.read_text()          # sanity: comment present
     r = runner.invoke(cli_mod.app, ["model", "gemma3", "-p", "ollama"])
     assert r.exit_code == 0
     after = dest.read_text()
-    assert "# Edit [sources] then run" in after  # comment survived the edit
+    assert marker in after                     # comment survived the edit
     import tomllib
     assert tomllib.loads(after)["generation"]["model"] == "gemma3"
 
