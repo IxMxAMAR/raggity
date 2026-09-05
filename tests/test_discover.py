@@ -5,6 +5,7 @@ from raggity.discover import (
     DISCOVER_EXTS,
     Candidate,
     count_indexable,
+    discover,
     scan_named,
     scan_obsidian,
 )
@@ -89,3 +90,50 @@ def test_a_corrupt_obsidian_config_is_not_fatal(tmp_path, monkeypatch):
     cfg.write_text("{not json", encoding="utf-8")
     monkeypatch.setattr("raggity.discover.obsidian_config_path", lambda: cfg)
     assert scan_obsidian() == []
+
+
+def test_a_dense_folder_deep_in_home_is_found(tmp_path, monkeypatch):
+    monkeypatch.setattr("raggity.discover.scan_obsidian", list)
+    _tree(tmp_path, [f"projects/novel/notes/ch{i}.md" for i in range(6)])
+    cands, complete = discover(home=tmp_path, cwd=tmp_path / "elsewhere")
+    assert complete
+    assert tmp_path / "projects" / "novel" / "notes" in [c.path for c in cands]
+
+
+def test_only_the_shallowest_folder_in_a_chain_is_offered(tmp_path, monkeypatch):
+    """A vault should appear once, not once per subfolder."""
+    monkeypatch.setattr("raggity.discover.scan_obsidian", list)
+    _tree(tmp_path, [f"vault/a{i}.md" for i in range(6)]
+                    + [f"vault/sub/b{i}.md" for i in range(6)])
+    cands, _ = discover(home=tmp_path, cwd=tmp_path / "elsewhere")
+    found = [c.path for c in cands if c.kind == "found"]
+    assert tmp_path / "vault" in found
+    assert tmp_path / "vault" / "sub" not in found
+
+
+def test_a_sparse_folder_is_not_offered(tmp_path, monkeypatch):
+    """Under five files is noise, not a document folder."""
+    monkeypatch.setattr("raggity.discover.scan_obsidian", list)
+    _tree(tmp_path, ["stray/one.md", "stray/two.md"])
+    cands, _ = discover(home=tmp_path, cwd=tmp_path / "elsewhere")
+    assert tmp_path / "stray" not in [c.path for c in cands]
+
+
+def test_running_out_of_budget_is_reported_not_hidden(tmp_path, monkeypatch):
+    """`complete=False` is what stops "found nothing" being confused with
+    "ran out of time" — the user is offered a deeper scan instead."""
+    monkeypatch.setattr("raggity.discover.scan_obsidian", list)
+    _tree(tmp_path, [f"d{i}/f{j}.md" for i in range(30) for j in range(6)])
+    cands, complete = discover(home=tmp_path, cwd=tmp_path / "elsewhere",
+                               budget_s=0.0)
+    assert complete is False
+
+
+def test_candidates_come_back_best_first(tmp_path, monkeypatch):
+    vault = _tree(tmp_path / "V", ["a.md"])
+    monkeypatch.setattr(
+        "raggity.discover.scan_obsidian",
+        lambda: [Candidate(vault, "obsidian", 1, {".md": 1}, 100, "Obsidian vault")])
+    _tree(tmp_path / "Documents", [f"d{i}.md" for i in range(6)])
+    cands, _ = discover(home=tmp_path, cwd=tmp_path / "elsewhere")
+    assert cands[0].kind == "obsidian"

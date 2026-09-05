@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -115,3 +116,78 @@ def scan_obsidian() -> list[Candidate]:
                              exts=exts, confidence=100,
                              why=f"Obsidian vault - {describe(exts)}"))
     return out
+
+
+MIN_DENSE_FILES = 5      # fewer than this in one directory is noise
+_WALK_SKIP = {"node_modules", "__pycache__", "venv", ".venv", "dist", "build",
+              "site-packages", "AppData", "Library"}
+
+
+def _walk_for_dense(home: Path, deadline: float | None,
+                    already: set[Path]) -> tuple[list[Candidate], bool]:
+    """Directories holding MIN_DENSE_FILES or more indexable files.
+
+    Only the shallowest match in any chain is kept, so a vault is offered once
+    rather than once per subfolder. Returns (candidates, completed).
+    """
+    out: list[Candidate] = []
+    claimed: list[Path] = []
+    stack = [home]
+    while stack:
+        if deadline is not None and time.monotonic() > deadline:
+            return out, False
+        cur = stack.pop()
+        try:
+            entries = list(cur.iterdir())
+        except OSError:
+            continue
+        for d in entries:
+            if d.is_dir() and not d.name.startswith(".") \
+                    and d.name not in _WALK_SKIP:
+                stack.append(d)
+        if cur in already or any(cur.is_relative_to(c) for c in claimed):
+            continue
+        exts: dict[str, int] = {}
+        for f in entries:
+            if f.is_file() and f.suffix.lower() in DISCOVER_EXTS:
+                exts[f.suffix.lower()] = exts.get(f.suffix.lower(), 0) + 1
+        if sum(exts.values()) >= MIN_DENSE_FILES:
+            total, full = count_indexable(cur)
+            claimed.append(cur)
+            out.append(Candidate(path=cur, kind="found", file_count=total,
+                                 exts=full, confidence=25, why=describe(full)))
+    return out, True
+
+
+def discover(*, budget_s: float = 1.5, deep: bool = False,
+             cwd: Path | None = None,
+             home: Path | None = None) -> tuple[list[Candidate], bool]:
+    """Folders worth offering, best first, plus whether the search finished.
+
+    Cheapest signals first so the useful answer arrives immediately: Obsidian's
+    own vault list, the working directory, then the usual named folders. Only
+    the walk of the home directory is budgeted, and only it can be cut short.
+    """
+    cwd = Path(cwd if cwd is not None else Path.cwd())
+    home = Path(home if home is not None else Path.home())
+
+    cands: list[Candidate] = list(scan_obsidian())
+    seen: set[Path] = {c.path for c in cands}
+
+    for c in scan_named([cwd]):
+        if c.path not in seen:
+            cands.append(Candidate(c.path, "cwd", c.file_count, c.exts, 75,
+                                   f"this folder - {c.why}"))
+            seen.add(c.path)
+
+    for c in scan_named([home / "Documents", home / "Notes", home / "Desktop"]):
+        if c.path not in seen:
+            cands.append(c)
+            seen.add(c.path)
+
+    deadline = None if deep else time.monotonic() + budget_s
+    walked, complete = _walk_for_dense(home, deadline, seen)
+    cands.extend(c for c in walked if c.path not in seen)
+
+    cands.sort(key=lambda c: (-c.confidence, -c.file_count, str(c.path)))
+    return cands, complete
