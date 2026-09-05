@@ -417,8 +417,9 @@ def test_init_creates_toml(tmp_path, monkeypatch):
     assert "[sources]" in content
     assert "include" in content
     assert "[generation]" in content
-    # Next-steps guidance printed
-    assert "rag ingest" in r.output
+    # Next-steps guidance printed. It names `rag add`, not `rag ingest`:
+    # ingesting was step 2 behind "edit raggity.toml", and `rag add` does both.
+    assert "rag add" in r.output
     # profile preset documented as a commented-out line (parses fine as-is)
     assert '# profile = "low-ram"' in content
     import tomllib

@@ -6,28 +6,31 @@
 pip install raggity
 ```
 
-## 2. Generate a config
+## 2. Point it at your documents
 
 ```bash
-rag init
+rag add ~/notes
 ```
 
-Open the generated `raggity.toml` and point `sources.include` at your notes:
+That records the folder and indexes it in one step, writing `raggity.toml` for you
+if there isn't one. Add as many folders as you like; `--no-ingest` defers indexing
+until you've added them all.
 
-```toml
-[sources]
-include = ["~/notes/**/*.md", "~/docs/**/*.pdf"]
-```
-
-## 3. Index your sources
+Not sure what to point it at?
 
 ```bash
-rag ingest
+rag discover
 ```
 
-Ingestion is **incremental** — hash-based, so only new or changed files are processed. Safe to re-run at any time.
+lists the document folders it can find on this machine — Obsidian vaults, your
+Documents folder, whatever you're standing in — with a file count for each. You can
+also just run `rag ask` straight away: with nothing indexed yet it offers the same
+list, including a folder picker, rather than sending you back to the config file.
 
-## 4. Ask a question
+Ingestion is **incremental** — hash-based, so only new or changed files are
+processed. `rag ingest` re-runs it at any time, and is safe to repeat.
+
+## 3. Ask a question
 
 ```bash
 rag ask "How do I set up a new dev environment?"
@@ -41,7 +44,9 @@ raggity retrieves the most relevant chunks from your index, reranks them, and an
 
 | Command | Description |
 |---|---|
-| `rag init` | Create a `raggity.toml` config template |
+| `rag add <folder>` | Index a folder — writes the config for you if there isn't one |
+| `rag discover` | List document folders on this machine worth indexing (`--json` for tooling) |
+| `rag init` | Write a `raggity.toml` template to edit by hand |
 | `rag ingest` | Incrementally index configured sources |
 | `rag ingest-url <url>` | Fetch a web URL (and optionally crawl same-domain links) |
 | `rag ingest-repo <url>` | Shallow-clone a git repo and index all text files |

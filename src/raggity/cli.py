@@ -131,9 +131,10 @@ def init(config: str = typer.Option(None, "--config")):
     dest.write_text(_INIT_TEMPLATE, encoding="utf-8")
     console.print(f"[green]Created[/green] {dest}")
     console.print("\nNext steps:")
-    console.print(r"  1. Edit [cyan]raggity.toml[/cyan] - set \[sources] include patterns")
-    console.print("  2. Run [cyan]rag ingest[/cyan]  - index your files")
-    console.print('  3. Run [cyan]rag ask "your question here"[/cyan]')
+    console.print("  1. Run [cyan]rag add <folder>[/cyan]  - index a folder")
+    console.print('  2. Run [cyan]rag ask "your question here"[/cyan]')
+    console.print("\n[dim]Not sure which folder? [cyan]rag discover[/cyan] lists "
+                  "what is on this machine.[/dim]")
 
 
 def _print_provider_table(statuses) -> None:
@@ -294,6 +295,38 @@ def ingest(config: str = typer.Option(None, "--config")):
     if _ensure_sources(config):
         raise typer.Exit(1)
     _do_ingest(config)
+
+
+def cli_discover_source(**kw):
+    """Indirection so tests can substitute the scan without touching the disk."""
+    from .discover import discover as _discover  # noqa: PLC0415
+    return _discover(**kw)
+
+
+@app.command()
+def discover(
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    deep: bool = typer.Option(False, "--deep", help="Search without a time limit."),
+):
+    """List document folders on this machine that are worth indexing."""
+    import json as _json  # noqa: PLC0415
+    cands, complete = cli_discover_source(deep=deep)
+    if as_json:
+        print(_json.dumps({
+            "complete": complete,
+            "candidates": [{"path": str(c.path), "kind": c.kind,
+                            "file_count": c.file_count, "exts": c.exts,
+                            "why": c.why} for c in cands]}))
+        return
+    if not cands:
+        console.print("[yellow]No obvious document folders found.[/yellow]")
+        if not complete:
+            console.print("Try [cyan]rag discover --deep[/cyan] to search without "
+                          "a time limit.")
+        return
+    for c in cands:
+        console.print(f"  {c.path}  [dim]{c.why}[/dim]")
+    console.print("\nIndex one with [cyan]rag add <folder>[/cyan].")
 
 
 @app.command()
