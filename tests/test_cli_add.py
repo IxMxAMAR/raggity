@@ -38,4 +38,7 @@ def test_no_ingest_records_without_indexing(tmp_path, monkeypatch):
 def test_add_rejects_a_path_that_is_not_a_folder(tmp_path):
     res = runner.invoke(app, ["add", str(tmp_path / "nope")])
     assert res.exit_code != 0
-    assert "not a folder" in res.output
+    # Collapse whitespace before matching. rich wraps to the terminal width, and
+    # CI's is narrower than a developer's: the phrase arrived as "is not a
+    # \nfolder", so asserting on the raw output passed here and failed there.
+    assert "not a folder" in " ".join(res.output.split())

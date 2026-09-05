@@ -364,7 +364,7 @@ def test_ask_no_config_file_shows_hint(tmp_path, monkeypatch):
     # `rag add`, not `rag init`: init writes a template whose own next step was
     # "edit raggity.toml", which is the dead end this replaced.
     assert r.exit_code == 0
-    assert "rag add" in r.output
+    assert "rag add" in " ".join(r.output.split())   # rich wraps; CI is narrower
 
 
 def test_ingest_no_config_file_shows_hint(tmp_path, monkeypatch):
@@ -374,7 +374,7 @@ def test_ingest_no_config_file_shows_hint(tmp_path, monkeypatch):
     monkeypatch.setattr(platformdirs, "user_config_dir", lambda *a, **kw: str(tmp_path))
     r = runner.invoke(cli_mod.app, ["ingest"])
     # exit code doesn't matter (may still run with defaults); the hint must appear
-    assert "rag add" in r.output
+    assert "rag add" in " ".join(r.output.split())   # rich wraps; CI is narrower
 
 
 def test_ask_agentic_invokes_ask_agentic(tmp_path, monkeypatch):
@@ -419,7 +419,7 @@ def test_init_creates_toml(tmp_path, monkeypatch):
     assert "[generation]" in content
     # Next-steps guidance printed. It names `rag add`, not `rag ingest`:
     # ingesting was step 2 behind "edit raggity.toml", and `rag add` does both.
-    assert "rag add" in r.output
+    assert "rag add" in " ".join(r.output.split())   # rich wraps; CI is narrower
     # profile preset documented as a commented-out line (parses fine as-is)
     assert '# profile = "low-ram"' in content
     import tomllib

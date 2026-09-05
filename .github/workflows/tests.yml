@@ -13,14 +13,14 @@ jobs:
       matrix:
         include:
           - python-version: "3.11"
-            extras: "server,qdrant,openai,web,docs,ocr,graph,otel,watch,dev"
+            extras: "server,qdrant,openai,web,docs,ocr,graph,otel,watch,mcp,dev"
           - python-version: "3.12"
-            extras: "server,qdrant,openai,web,docs,ocr,graph,otel,watch,dev"
+            extras: "server,qdrant,openai,web,docs,ocr,graph,otel,watch,mcp,dev"
           # Python 3.13: the `ocr` extra (rapidocr-onnxruntime) has no 3.13 wheels yet,
           # so it is excluded here. The OCR code path is import-lazy and its tests mock
           # the dependency, so the suite still runs fully on 3.13.
           - python-version: "3.13"
-            extras: "server,qdrant,openai,web,docs,graph,otel,watch,dev"
+            extras: "server,qdrant,openai,web,docs,graph,otel,watch,mcp,dev"
 
     steps:
       - uses: actions/checkout@v4
