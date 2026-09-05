@@ -31,17 +31,36 @@ _EMPTY_KB_HINT = (
     "then [cyan]rag ingest[/cyan]."
 )
 _NO_CONFIG_HINT = (
-    "[yellow]No raggity.toml found.[/yellow] "
-    "Run [cyan]rag init[/cyan] to create one."
+    "[yellow]No documents are indexed yet.[/yellow] "
+    "Run [cyan]rag add <folder>[/cyan] to index one, "
+    "or [cyan]rag discover[/cyan] to see what is on this machine."
 )
 
 
-def _check_no_config(config: str | None) -> bool:
-    """Return True (and print hint) when no config file is found."""
-    if _find_config_path(config) is None:
-        console.print(_NO_CONFIG_HINT)
-        return True
-    return False
+def _ensure_sources(config: str | None) -> bool:
+    """Return True (having said why) when the caller cannot continue.
+
+    Checks for SOURCES, not merely for a config file. A config whose
+    `[sources] include` is empty is the state that silently indexed nothing and
+    left `rag ask` answering from an empty index — the file existed, so the old
+    check was satisfied.
+
+    When there is a terminal, offer what is on the machine instead of naming a
+    command to run next. When there is not — rigma shells out to these commands —
+    print the hint and let the caller exit, because a prompt with no one to
+    answer it hangs a background ingest until its timeout.
+    """
+    from .setup_flow import offer  # noqa: PLC0415
+    if _find_config_path(config) is not None:
+        try:
+            if load_config(config).sources.include:
+                return False
+        except Exception:  # noqa: BLE001
+            return False           # a broken config is the loader's to report
+    if offer(config):
+        return False
+    console.print(_NO_CONFIG_HINT)
+    return True
 
 
 def _rag(config: str | None) -> Raggity:
@@ -50,7 +69,8 @@ def _rag(config: str | None) -> Raggity:
 
 _INIT_TEMPLATE = """\
 # raggity.toml - configuration for raggity
-# Edit [sources] then run: rag ingest
+# Add folders with `rag add <folder>` - it writes [sources] for you and indexes
+# them. Edit anything here by hand if you prefer; `rag ingest` re-indexes.
 
 # profile = "low-ram"  # minimize RAM: embedded lancedb, no rerank/graph/caches, capped sessions
 
@@ -112,9 +132,10 @@ def init(config: str = typer.Option(None, "--config")):
     dest.write_text(_INIT_TEMPLATE, encoding="utf-8")
     console.print(f"[green]Created[/green] {dest}")
     console.print("\nNext steps:")
-    console.print(r"  1. Edit [cyan]raggity.toml[/cyan] - set \[sources] include patterns")
-    console.print("  2. Run [cyan]rag ingest[/cyan]  - index your files")
-    console.print('  3. Run [cyan]rag ask "your question here"[/cyan]')
+    console.print("  1. Run [cyan]rag add <folder>[/cyan]  - index a folder")
+    console.print('  2. Run [cyan]rag ask "your question here"[/cyan]')
+    console.print("\n[dim]Not sure which folder? [cyan]rag discover[/cyan] lists "
+                  "what is on this machine.[/dim]")
 
 
 def _print_provider_table(statuses) -> None:
@@ -241,10 +262,9 @@ def doctor(config: str = typer.Option(None, "--config")):
     raise typer.Exit(_doctor.run_doctor(config, console))
 
 
-@app.command()
-def ingest(config: str = typer.Option(None, "--config")):
-    """Incrementally index configured source folders."""
-    _check_no_config(config)
+def _do_ingest(config: str | None) -> None:
+    """The body of `rag ingest`, so `rag add` and the setup flow can finish the
+    job they started instead of telling the user to run another command."""
     rag = _rag(config)
     if rag.cfg.retrieval.contextual:
         console.print(
@@ -268,6 +288,67 @@ def ingest(config: str = typer.Option(None, "--config")):
             rf"[yellow]Skipped {cnt} file(s) needing raggity\[{extra}] - "
             rf"install with:[/yellow] [cyan]pip install raggity\[{extra}][/cyan]"
         )
+
+
+@app.command()
+def ingest(config: str = typer.Option(None, "--config")):
+    """Incrementally index configured source folders."""
+    if _ensure_sources(config):
+        raise typer.Exit(1)
+    _do_ingest(config)
+
+
+def cli_discover_source(**kw):
+    """Indirection so tests can substitute the scan without touching the disk."""
+    from .discover import discover as _discover  # noqa: PLC0415
+    return _discover(**kw)
+
+
+@app.command()
+def discover(
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    deep: bool = typer.Option(False, "--deep", help="Search without a time limit."),
+):
+    """List document folders on this machine that are worth indexing."""
+    import json as _json  # noqa: PLC0415
+    cands, complete = cli_discover_source(deep=deep)
+    if as_json:
+        print(_json.dumps({
+            "complete": complete,
+            "candidates": [{"path": str(c.path), "kind": c.kind,
+                            "file_count": c.file_count, "exts": c.exts,
+                            "why": c.why} for c in cands]}))
+        return
+    if not cands:
+        console.print("[yellow]No obvious document folders found.[/yellow]")
+        if not complete:
+            console.print("Try [cyan]rag discover --deep[/cyan] to search without "
+                          "a time limit.")
+        return
+    for c in cands:
+        console.print(f"  {c.path}  [dim]{c.why}[/dim]")
+    console.print("\nIndex one with [cyan]rag add <folder>[/cyan].")
+
+
+@app.command()
+def add(
+    path: str = typer.Argument(..., help="Folder of documents to index."),
+    config: str = typer.Option(None, "--config"),
+    ingest: bool = typer.Option(True, "--ingest/--no-ingest",
+                                help="Index the folder straight away."),
+):
+    """Add a folder to the index. No config editing required."""
+    from pathlib import Path as _Path  # noqa: PLC0415
+
+    from .sources import add_sources  # noqa: PLC0415
+    folder = _Path(path).expanduser()
+    if not folder.is_dir():
+        console.print(f"[red]{folder} is not a folder.[/red]")
+        raise typer.Exit(1)
+    dest = add_sources([folder.resolve()], config)
+    console.print(f"[green]Added[/green] {folder} to {dest.name}")
+    if ingest:
+        _do_ingest(str(dest))
 
 
 @app.command(name="ingest-url")
@@ -392,7 +473,7 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
         no_cache: bool = typer.Option(False, "--no-cache")):
     """Ask a question against your knowledge base."""
     import asyncio
-    if _check_no_config(config):
+    if _ensure_sources(config):
         raise typer.Exit(0)
     if agentic and decompose:
         typer.echo("error: --agentic and --decompose are mutually exclusive", err=True)
@@ -461,7 +542,7 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
 def chat(config: str = typer.Option(None, "--config")):
     """Start an interactive multi-turn chat REPL against your knowledge base."""
     from .conversation import Conversation  # noqa: PLC0415
-    if _check_no_config(config):
+    if _ensure_sources(config):
         raise typer.Exit(0)
     rag = _rag(config)
     if rag.store.count() == 0:

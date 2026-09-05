@@ -360,9 +360,11 @@ def test_ask_no_config_file_shows_hint(tmp_path, monkeypatch):
     import platformdirs
     monkeypatch.setattr(platformdirs, "user_config_dir", lambda *a, **kw: str(tmp_path))
     r = runner.invoke(cli_mod.app, ["ask", "anything", "--plain"])
-    # Should exit 0 and show a no-config hint (not crash)
+    # Should exit 0 and show a no-sources hint (not crash). The hint names
+    # `rag add`, not `rag init`: init writes a template whose own next step was
+    # "edit raggity.toml", which is the dead end this replaced.
     assert r.exit_code == 0
-    assert "rag init" in r.output
+    assert "rag add" in r.output
 
 
 def test_ingest_no_config_file_shows_hint(tmp_path, monkeypatch):
@@ -372,7 +374,7 @@ def test_ingest_no_config_file_shows_hint(tmp_path, monkeypatch):
     monkeypatch.setattr(platformdirs, "user_config_dir", lambda *a, **kw: str(tmp_path))
     r = runner.invoke(cli_mod.app, ["ingest"])
     # exit code doesn't matter (may still run with defaults); the hint must appear
-    assert "rag init" in r.output
+    assert "rag add" in r.output
 
 
 def test_ask_agentic_invokes_ask_agentic(tmp_path, monkeypatch):
@@ -415,8 +417,9 @@ def test_init_creates_toml(tmp_path, monkeypatch):
     assert "[sources]" in content
     assert "include" in content
     assert "[generation]" in content
-    # Next-steps guidance printed
-    assert "rag ingest" in r.output
+    # Next-steps guidance printed. It names `rag add`, not `rag ingest`:
+    # ingesting was step 2 behind "edit raggity.toml", and `rag add` does both.
+    assert "rag add" in r.output
     # profile preset documented as a commented-out line (parses fine as-is)
     assert '# profile = "low-ram"' in content
     import tomllib
@@ -495,11 +498,15 @@ def test_model_preserves_template_comments(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner.invoke(cli_mod.app, ["init"])
     dest = tmp_path / "raggity.toml"
-    assert "# Edit [sources] then run" in dest.read_text()  # sanity: comment present
+    # Anchored on the template's title line rather than a line of guidance:
+    # this test is about tomlkit preserving comments, not about the wording,
+    # and pinning the wording made a copy change look like a tomlkit failure.
+    marker = "# raggity.toml - configuration for raggity"
+    assert marker in dest.read_text()          # sanity: comment present
     r = runner.invoke(cli_mod.app, ["model", "gemma3", "-p", "ollama"])
     assert r.exit_code == 0
     after = dest.read_text()
-    assert "# Edit [sources] then run" in after  # comment survived the edit
+    assert marker in after                     # comment survived the edit
     import tomllib
     assert tomllib.loads(after)["generation"]["model"] == "gemma3"
 
