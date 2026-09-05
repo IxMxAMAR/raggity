@@ -241,10 +241,9 @@ def doctor(config: str = typer.Option(None, "--config")):
     raise typer.Exit(_doctor.run_doctor(config, console))
 
 
-@app.command()
-def ingest(config: str = typer.Option(None, "--config")):
-    """Incrementally index configured source folders."""
-    _check_no_config(config)
+def _do_ingest(config: str | None) -> None:
+    """The body of `rag ingest`, so `rag add` and the setup flow can finish the
+    job they started instead of telling the user to run another command."""
     rag = _rag(config)
     if rag.cfg.retrieval.contextual:
         console.print(
@@ -268,6 +267,34 @@ def ingest(config: str = typer.Option(None, "--config")):
             rf"[yellow]Skipped {cnt} file(s) needing raggity\[{extra}] - "
             rf"install with:[/yellow] [cyan]pip install raggity\[{extra}][/cyan]"
         )
+
+
+@app.command()
+def ingest(config: str = typer.Option(None, "--config")):
+    """Incrementally index configured source folders."""
+    _check_no_config(config)
+    _do_ingest(config)
+
+
+@app.command()
+def add(
+    path: str = typer.Argument(..., help="Folder of documents to index."),
+    config: str = typer.Option(None, "--config"),
+    ingest: bool = typer.Option(True, "--ingest/--no-ingest",
+                                help="Index the folder straight away."),
+):
+    """Add a folder to the index. No config editing required."""
+    from pathlib import Path as _Path  # noqa: PLC0415
+
+    from .sources import add_sources  # noqa: PLC0415
+    folder = _Path(path).expanduser()
+    if not folder.is_dir():
+        console.print(f"[red]{folder} is not a folder.[/red]")
+        raise typer.Exit(1)
+    dest = add_sources([folder.resolve()], config)
+    console.print(f"[green]Added[/green] {folder} to {dest.name}")
+    if ingest:
+        _do_ingest(str(dest))
 
 
 @app.command(name="ingest-url")
