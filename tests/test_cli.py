@@ -360,9 +360,11 @@ def test_ask_no_config_file_shows_hint(tmp_path, monkeypatch):
     import platformdirs
     monkeypatch.setattr(platformdirs, "user_config_dir", lambda *a, **kw: str(tmp_path))
     r = runner.invoke(cli_mod.app, ["ask", "anything", "--plain"])
-    # Should exit 0 and show a no-config hint (not crash)
+    # Should exit 0 and show a no-sources hint (not crash). The hint names
+    # `rag add`, not `rag init`: init writes a template whose own next step was
+    # "edit raggity.toml", which is the dead end this replaced.
     assert r.exit_code == 0
-    assert "rag init" in r.output
+    assert "rag add" in r.output
 
 
 def test_ingest_no_config_file_shows_hint(tmp_path, monkeypatch):
@@ -372,7 +374,7 @@ def test_ingest_no_config_file_shows_hint(tmp_path, monkeypatch):
     monkeypatch.setattr(platformdirs, "user_config_dir", lambda *a, **kw: str(tmp_path))
     r = runner.invoke(cli_mod.app, ["ingest"])
     # exit code doesn't matter (may still run with defaults); the hint must appear
-    assert "rag init" in r.output
+    assert "rag add" in r.output
 
 
 def test_ask_agentic_invokes_ask_agentic(tmp_path, monkeypatch):

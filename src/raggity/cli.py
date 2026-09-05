@@ -31,17 +31,36 @@ _EMPTY_KB_HINT = (
     "then [cyan]rag ingest[/cyan]."
 )
 _NO_CONFIG_HINT = (
-    "[yellow]No raggity.toml found.[/yellow] "
-    "Run [cyan]rag init[/cyan] to create one."
+    "[yellow]No documents are indexed yet.[/yellow] "
+    "Run [cyan]rag add <folder>[/cyan] to index one, "
+    "or [cyan]rag discover[/cyan] to see what is on this machine."
 )
 
 
-def _check_no_config(config: str | None) -> bool:
-    """Return True (and print hint) when no config file is found."""
-    if _find_config_path(config) is None:
-        console.print(_NO_CONFIG_HINT)
-        return True
-    return False
+def _ensure_sources(config: str | None) -> bool:
+    """Return True (having said why) when the caller cannot continue.
+
+    Checks for SOURCES, not merely for a config file. A config whose
+    `[sources] include` is empty is the state that silently indexed nothing and
+    left `rag ask` answering from an empty index — the file existed, so the old
+    check was satisfied.
+
+    When there is a terminal, offer what is on the machine instead of naming a
+    command to run next. When there is not — rigma shells out to these commands —
+    print the hint and let the caller exit, because a prompt with no one to
+    answer it hangs a background ingest until its timeout.
+    """
+    from .setup_flow import offer  # noqa: PLC0415
+    if _find_config_path(config) is not None:
+        try:
+            if load_config(config).sources.include:
+                return False
+        except Exception:  # noqa: BLE001
+            return False           # a broken config is the loader's to report
+    if offer(config):
+        return False
+    console.print(_NO_CONFIG_HINT)
+    return True
 
 
 def _rag(config: str | None) -> Raggity:
@@ -272,7 +291,8 @@ def _do_ingest(config: str | None) -> None:
 @app.command()
 def ingest(config: str = typer.Option(None, "--config")):
     """Incrementally index configured source folders."""
-    _check_no_config(config)
+    if _ensure_sources(config):
+        raise typer.Exit(1)
     _do_ingest(config)
 
 
@@ -419,7 +439,7 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
         no_cache: bool = typer.Option(False, "--no-cache")):
     """Ask a question against your knowledge base."""
     import asyncio
-    if _check_no_config(config):
+    if _ensure_sources(config):
         raise typer.Exit(0)
     if agentic and decompose:
         typer.echo("error: --agentic and --decompose are mutually exclusive", err=True)
@@ -488,7 +508,7 @@ def ask(question: str, config: str = typer.Option(None, "--config"),
 def chat(config: str = typer.Option(None, "--config")):
     """Start an interactive multi-turn chat REPL against your knowledge base."""
     from .conversation import Conversation  # noqa: PLC0415
-    if _check_no_config(config):
+    if _ensure_sources(config):
         raise typer.Exit(0)
     rag = _rag(config)
     if rag.store.count() == 0:
